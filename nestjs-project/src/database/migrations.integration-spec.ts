@@ -14,6 +14,32 @@ const MANAGED_TABLES = [
   'verification_tokens',
 ];
 
+/**
+ * Wipes every object the migrations own so `runMigrations()` starts from zero.
+ *
+ * `DROP TABLE ... CASCADE` does not remove PostgreSQL enum types — a leftover
+ * type makes the next `CREATE TYPE` in a migration fail with
+ * `type "..." already exists`. Enums are discovered from the catalog instead of
+ * being hardcoded, so migrations added later are covered automatically.
+ */
+async function dropMigratedObjects(dataSource: DataSource): Promise<void> {
+  for (const table of [...MANAGED_TABLES, 'migrations']) {
+    await dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`);
+  }
+
+  const enumTypes = await dataSource.query<{ typname: string }[]>(
+    `SELECT t.typname
+       FROM pg_type t
+       JOIN pg_namespace n ON n.oid = t.typnamespace
+      WHERE n.nspname = 'public'
+        AND t.typtype = 'e'`,
+  );
+
+  for (const { typname } of enumTypes) {
+    await dataSource.query(`DROP TYPE IF EXISTS "public"."${typname}" CASCADE`);
+  }
+}
+
 describe('Database migrations (integration)', () => {
   let dataSource: DataSource;
 
@@ -31,12 +57,7 @@ describe('Database migrations (integration)', () => {
 
     await dataSource.initialize();
 
-    await Promise.all([
-      ...MANAGED_TABLES.map((table) =>
-        dataSource.query(`DROP TABLE IF EXISTS "${table}" CASCADE`),
-      ),
-      dataSource.query(`DROP TABLE IF EXISTS "migrations" CASCADE`),
-    ]);
+    await dropMigratedObjects(dataSource);
   });
 
   afterAll(async () => {
