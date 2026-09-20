@@ -1,4 +1,19 @@
+import type * as Joi from 'joi';
 import { envValidationSchema } from './env.validation';
+
+/** The subset of the validated env this suite asserts on. */
+interface ValidatedEnv {
+  SWAGGER_ENABLED: string;
+}
+
+/**
+ * Joi's own `ValidationResult` is a union whose error branch types `value` as
+ * `any`; flatten it so assertions on `value` stay type-checked.
+ */
+interface EnvValidation {
+  error?: Joi.ValidationError;
+  value: ValidatedEnv;
+}
 
 const requiredEnv = {
   DB_USERNAME: 'user',
@@ -8,7 +23,7 @@ const requiredEnv = {
   JWT_REFRESH_SECRET: 'refresh-secret',
 };
 
-const validate = (env: Record<string, string>) =>
+const validate = (env: Record<string, string>): EnvValidation =>
   envValidationSchema.validate(
     { ...requiredEnv, ...env },
     { allowUnknown: true, abortEarly: false },
