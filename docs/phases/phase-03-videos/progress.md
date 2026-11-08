@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 6/12 completed
+**SIs:** 7/12 completed
 
 ### SI-03.1 — Provisionar object storage e broker no Compose
 - **Status:** completed
@@ -68,9 +68,14 @@
   - **Dois tropeços meus nesta rodada:** o `videos.module.spec.ts` da rodada anterior quebrou ao o módulo ganhar imports de Config/Storage/Queue (reescrito com `ConfigModule` global, como a regra de testes manda para `forRootAsync`), e eu relatei "lint em 0" com o exit code mascarado por um `| tail` — o lint tinha 2 erros de `no-unsafe-member-access` em `mock.calls`. Passei a capturar o código antes de pipar.
 
 ### SI-03.7 — Implementar a finalização do upload com verificação e enfileiramento
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 19 passing no SI (6 unit de `completeUpload` + 3 de integração contra MinIO e Redis reais + 10 unit do validator); suíte completa 247 passing / 34 suites, e2e 52 passing / 3 suites, `tsc --noEmit` exit 0, lint exit 0
+- **Observations:**
+  - **Imprecisão real encontrada na TD-12, e contornada sem reabrir a decisão.** A TD diz "verifica com `HeadObject` no complete" e "divergência **aborta o multipart**" — as duas coisas não coexistem: antes do `CompleteMultipartUpload` o objeto não existe (nada a inspecionar), e depois dele o multipart já não existe (nada a abortar). A limpeza equivalente é **apagar o objeto**, que é o que o código faz. O resultado observável que o Error Catalog especifica (`409`, linha `failed` com motivo, nada enfileirado) não muda, então tratei como imprecisão de prosa e corrigi a redação do plano em vez de abrir Revision na TD. Vale a sua chamada se preferir registrar formalmente.
+  - **`upload_id` é zerado no complete**, tanto no caminho de sucesso quanto no de falha: depois de completar ou apagar, não existe mais upload endereçável, e deixar o id ali daria ao reaper um alvo inválido.
+  - **Dois gatilhos de falha, uma exceção.** Divergência de tamanho e objeto acima do teto levam ambos a `failed` + `UPLOAD_SIZE_MISMATCH`, mas com `processing_error` distinto, para o motivo ficar legível depois.
+  - **Regra de partes consecutivas virou validator próprio** (`IsConsecutiveFromOne`), com 10 testes unit. Não é expressável em decorator declarativo sobre o array, e sem ela o cliente receberia o `400 InvalidPartOrder` cru do S3 em vez do erro de validação do projeto. O guia pede Unit para validação customizada.
+  - O teste de integração do caminho de falha declara o dobro do que envia, então a divergência é produzida de verdade pelo storage — não simulada.
 
 ### SI-03.8 — Expor as rotas autenticadas de upload
 - **Status:** pending

@@ -195,7 +195,7 @@ Entregar upload de vídeos de até 10GB sem passar os bytes pela API, processame
 **Technical actions:**
 
 1. Implementar `completeUpload` em `VideosService` — confere posse e `status`, chama `CompleteMultipartUpload` com as partes ordenadas (per `phase-03-videos/TD-02`)
-2. Verificar `HeadObject.ContentLength` contra `declared_size_bytes`; divergência aborta o multipart, move para `failed` com `processing_error` e lança `UPLOAD_SIZE_MISMATCH` (per `phase-03-videos/TD-12`)
+2. Verificar `HeadObject.ContentLength` contra `declared_size_bytes`; divergência **apaga o objeto**, move para `failed` com `processing_error` e lança `UPLOAD_SIZE_MISMATCH` (per `phase-03-videos/TD-12`). A TD-12 escreve "aborta o multipart", o que não é possível nesse ponto — o tamanho só é legível depois de o `CompleteMultipartUpload` montar as partes, e aí o multipart já não existe. A limpeza equivalente é apagar o objeto; o resultado observável que o Error Catalog especifica não muda.
 3. Persistir `storage_key` e `size_bytes` reais, mover para `processing` e enfileirar `video.process` na mesma transação lógica (per `phase-03-videos/TD-09`, `### Events/Messages`)
 4. Criar o DTO `CompleteUploadDto` com a regra de partes consecutivas a partir de 1
 

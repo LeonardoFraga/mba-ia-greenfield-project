@@ -9,11 +9,14 @@ import {
   UnsupportedMediaTypeException,
   UploadNotInProgressException,
   UploadSizeExceededException,
+  UploadSizeMismatchException,
   VideoNotFoundException,
   VideoNotOwnedException,
 } from '../common/exceptions/domain.exception';
 import storageConfig from '../config/storage.config';
+import { VideoProcessingQueue } from '../queue/video-processing.queue';
 import { StorageService } from '../storage/storage.service';
+import type { CompleteUploadDto } from './dto/complete-upload.dto';
 import type { InitiateUploadDto } from './dto/initiate-upload.dto';
 import type { SignPartsDto } from './dto/sign-parts.dto';
 import {
@@ -39,6 +42,12 @@ export interface SignedPart {
   expiresIn: number;
 }
 
+export interface CompleteUploadResult {
+  id: string;
+  publicId: string;
+  status: VideoStatus;
+}
+
 @Injectable()
 export class VideosService {
   constructor(
@@ -46,6 +55,7 @@ export class VideosService {
     private readonly videoRepository: Repository<Video>,
     private readonly channelsService: ChannelsService,
     private readonly storage: StorageService,
+    private readonly processingQueue: VideoProcessingQueue,
     @Inject(storageConfig.KEY)
     private readonly config: ConfigType<typeof storageConfig>,
   ) {}
@@ -139,6 +149,76 @@ export class VideosService {
         return { partNumber, url, expiresIn };
       }),
     );
+  }
+
+  /**
+   * Finalizes the upload, verifies the stored object against what was
+   * declared, and only then enqueues processing.
+   *
+   * Note on sequencing: the size can only be read after the parts are
+   * assembled, so verification necessarily happens *after*
+   * `CompleteMultipartUpload`. TD-12's prose says a mismatch "aborts the
+   * multipart upload", which is not possible at that point — the upload no
+   * longer exists, the object does. The equivalent cleanup is deleting the
+   * object, which is what happens here; the observable outcome the Error
+   * Catalog specifies (`409`, row `failed` with a reason, nothing enqueued) is
+   * unchanged.
+   */
+  async completeUpload(
+    userId: string,
+    videoId: string,
+    dto: CompleteUploadDto,
+  ): Promise<CompleteUploadResult> {
+    const video = await this.findOwnedVideo(userId, videoId);
+    this.assertUploadInProgress(video);
+
+    const storageKey = video.storage_key as string;
+    const uploadId = video.upload_id as string;
+
+    await this.storage.completeMultipartUpload(
+      storageKey,
+      uploadId,
+      dto.parts.map((part) => ({
+        partNumber: part.partNumber,
+        etag: part.etag,
+      })),
+    );
+
+    const { contentLength } = await this.storage.headObject(storageKey);
+    const declared = Number(video.declared_size_bytes ?? '0');
+
+    if (
+      contentLength !== declared ||
+      contentLength > this.config.maxUploadBytes
+    ) {
+      await this.storage.deleteObject(storageKey);
+
+      video.status = VideoStatus.FAILED;
+      video.processing_error =
+        contentLength > this.config.maxUploadBytes
+          ? `Stored object is ${contentLength} bytes, above the ${this.config.maxUploadBytes} byte ceiling`
+          : `Stored object is ${contentLength} bytes but ${declared} were declared`;
+      video.upload_id = null;
+      await this.videoRepository.save(video);
+
+      throw new UploadSizeMismatchException(String(declared), contentLength);
+    }
+
+    video.size_bytes = String(contentLength);
+    video.status = VideoStatus.PROCESSING;
+    video.upload_id = null;
+    await this.videoRepository.save(video);
+
+    await this.processingQueue.enqueue({
+      videoId: video.id,
+      storageKey,
+    });
+
+    return {
+      id: video.id,
+      publicId: video.public_id,
+      status: video.status,
+    };
   }
 
   /** Aborts an in-flight upload and discards the draft row. */

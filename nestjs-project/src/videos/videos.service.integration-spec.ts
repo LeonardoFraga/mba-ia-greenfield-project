@@ -10,10 +10,12 @@ import {
   UnsupportedMediaTypeException,
   UploadNotInProgressException,
   UploadSizeExceededException,
+  UploadSizeMismatchException,
   VideoNotOwnedException,
 } from '../common/exceptions/domain.exception';
 import databaseConfig from '../config/database.config';
 import queueConfig from '../config/queue.config';
+import { VideoProcessingQueue } from '../queue/video-processing.queue';
 import storageConfig from '../config/storage.config';
 import { StorageService } from '../storage/storage.service';
 import {
@@ -36,6 +38,7 @@ describe('VideosService (integration — real DB + MinIO)', () => {
   let userRepository: Repository<User>;
   let channelRepository: Repository<Channel>;
   let videoRepository: Repository<Video>;
+  let processingQueue: VideoProcessingQueue;
 
   beforeAll(async () => {
     module = await Test.createTestingModule({
@@ -55,6 +58,7 @@ describe('VideosService (integration — real DB + MinIO)', () => {
     userRepository = dataSource.getRepository(User);
     channelRepository = dataSource.getRepository(Channel);
     videoRepository = dataSource.getRepository(Video);
+    processingQueue = module.get(VideoProcessingQueue);
   }, 60000);
 
   afterAll(async () => {
@@ -63,6 +67,7 @@ describe('VideosService (integration — real DB + MinIO)', () => {
 
   beforeEach(async () => {
     await cleanAllTables(dataSource);
+    await processingQueue.queue.obliterate({ force: true });
   });
 
   let counter = 0;
@@ -244,5 +249,112 @@ describe('VideosService (integration — real DB + MinIO)', () => {
     await expect(videoRepository.countBy({ id: result.id })).resolves.toBe(1);
 
     await service.abortUpload(owner.user.id, result.id);
+  }, 60000);
+  /** Uploads the whole object as one part and returns the ETag. */
+  async function uploadSinglePart(
+    videoId: string,
+    uploadId: string,
+    userId: string,
+    bytes: number,
+  ): Promise<{ partNumber: number; etag: string }> {
+    const [part] = await service.signParts(userId, videoId, {
+      partNumbers: [1],
+    });
+    const response = await fetch(part.url, {
+      method: 'PUT',
+      body: new Uint8Array(Buffer.alloc(bytes, 'z')),
+    });
+    expect(response.status).toBe(200);
+    return { partNumber: 1, etag: response.headers.get('etag') as string };
+  }
+
+  it('should complete the upload, persist the real size and enqueue the job', async () => {
+    const { user } = await createUserWithChannel();
+    const started = await service.initiateUpload(user.id, dto);
+    const part = await uploadSinglePart(
+      started.id,
+      started.uploadId,
+      user.id,
+      dto.size,
+    );
+
+    const result = await service.completeUpload(user.id, started.id, {
+      parts: [part],
+    });
+
+    expect(result.status).toBe(VideoStatus.PROCESSING);
+
+    const row = await videoRepository.findOneByOrFail({ id: started.id });
+    expect(row.status).toBe(VideoStatus.PROCESSING);
+    expect(row.size_bytes).toBe(String(dto.size));
+    expect(row.upload_id).toBeNull();
+
+    // The object really is assembled in storage.
+    await expect(
+      storage.headObject(row.storage_key as string),
+    ).resolves.toMatchObject({ contentLength: dto.size });
+
+    // And the job really reached the broker.
+    const waiting = await processingQueue.queue.getJobs(['waiting']);
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0].data).toEqual({
+      videoId: started.id,
+      storageKey: row.storage_key,
+    });
+
+    await storage.deleteObject(row.storage_key as string);
+  }, 60000);
+
+  it('should fail the row and delete the object when fewer bytes arrive than declared', async () => {
+    const { user } = await createUserWithChannel();
+    // Declare twice what will actually be uploaded.
+    const started = await service.initiateUpload(user.id, {
+      ...dto,
+      size: dto.size * 2,
+    });
+    const part = await uploadSinglePart(
+      started.id,
+      started.uploadId,
+      user.id,
+      dto.size,
+    );
+
+    await expect(
+      service.completeUpload(user.id, started.id, { parts: [part] }),
+    ).rejects.toBeInstanceOf(UploadSizeMismatchException);
+
+    const row = await videoRepository.findOneByOrFail({ id: started.id });
+    expect(row.status).toBe(VideoStatus.FAILED);
+    expect(row.processing_error).toContain(String(dto.size));
+    expect(row.upload_id).toBeNull();
+
+    // The over/under-sized object is gone, not left behind as dead storage.
+    await expect(
+      storage.headObject(row.storage_key as string),
+    ).rejects.toThrow();
+
+    // And nothing was enqueued for a video that will never be processable.
+    await expect(
+      processingQueue.queue.getJobs(['waiting']),
+    ).resolves.toHaveLength(0);
+  }, 60000);
+
+  it('should refuse to complete twice', async () => {
+    const { user } = await createUserWithChannel();
+    const started = await service.initiateUpload(user.id, dto);
+    const part = await uploadSinglePart(
+      started.id,
+      started.uploadId,
+      user.id,
+      dto.size,
+    );
+    await service.completeUpload(user.id, started.id, { parts: [part] });
+
+    await expect(
+      service.completeUpload(user.id, started.id, { parts: [part] }),
+    ).rejects.toBeInstanceOf(UploadNotInProgressException);
+
+    const row = await videoRepository.findOneByOrFail({ id: started.id });
+    await storage.deleteObject(row.storage_key as string);
   }, 60000);
 });
