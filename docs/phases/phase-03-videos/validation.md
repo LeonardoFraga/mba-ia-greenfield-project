@@ -1,11 +1,11 @@
 ---
 kind: phase
 name: phase-03-videos
-status: dirty
+status: clean
 issue_count: 0
 sources_mtime:
-  docs/phases/phase-03-videos/context.md: "2026-11-08T18:57:34-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T18:51:31-03:00"
+  docs/phases/phase-03-videos/context.md: "2026-11-08T19:14:05-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T19:08:46-03:00"
 issues:
   - id: IC-1
     status: resolved
@@ -56,6 +56,8 @@ advisories: []
 
 # phase-03-videos — Validation
 
+All 13 TDs of the slice are `decided`, every capability bullet in `## Capability Coverage` maps to at least one of them, and the three conflicts the earlier rounds surfaced are now adjudicated inside `context.md` rather than left for `/plan-build` to guess at. Check 8 (cross-slice coverage) is suppressed — phase 3 has exactly one phase-scope decisions doc, so `CC-N` / `MC-cross-N` are not meaningful concepts here and the `## Capability Consistency` and `## Cross-slice Advisories` sections are omitted. `UIG-N` is skipped entirely: the phase has no UI capability bullet, so `## UI Inventory` is absent by construction. No custom rules exist in `docs/rules/plan-validate/`, so the custom-findings and suppressions sections are omitted.
+
 ## Findings
 
 ### Inconsistencies
@@ -99,3 +101,7 @@ _None._
 - **AMB-1** _(resolved_by phase-03-videos/TD-05)_ — Persisted metadata set fixed as a hybrid: discrete columns for `duration_seconds`, `width`, `height`, `size_bytes` plus a `jsonb` `metadata` column for the `ffprobe` long tail (container, video codec, audio codec, bitrate, framerate). Recorded as a `**Revisions:**` entry on TD-05 so `/plan-build` derives the Data Model from it.
 - **AMB-2** _(resolved_by phase-03-videos/TD-05)_ — Thumbnail parameters fixed: one frame seeked at 10% of the `ffprobe` duration, scaled to 1280x720 preserving aspect ratio, JPEG at fixed quality. A percentage never falls outside the file, unlike a fixed timestamp. Recorded as a `**Revisions:**` entry on TD-05.
 - **ICC-1** _(resolved_by phase-03-videos/TD-02, phase-03-videos/TD-07)_ — Resolved by recording a deliberately narrow exception on both cross-layer TDs: the inherited strict-BFF model governs calls to the NestJS API, and presigned storage URLs minted server-side fall outside its scope. Recorded on both TDs rather than one because the two contracts are inherited independently by different frontend phases.
+
+## Deferred follow-up (not an open issue)
+
+Correcting `.claude/skills/testing-guide-nestjs-project/references/external-systems.md` — § "Object Storage" to MinIO, § "Message Queue" to the BullMQ PostgreSQL backend, plus a queue producer/consumer row in the § 3 artifact table and the § 2 `BullModule.registerQueue()` example — is tracked as a **separate task** per `CLAUDE.md` § Scope Limits, since `.claude/` is provided foundation outside this phase's deliverable structure. It does not gate `/plan-build`: the authoritative instruction for `/implement` is the phase-local override table in `context.md`'s `## Testing Requirements`, backed by the `**Revisions:**` entries on TD-01 and TD-10.
