@@ -1,9 +1,9 @@
 ---
 scope_type: phase
 related_phases: [3]
-status: decided
+status: pending
 date: 2026-09-22
-scope_description: "Backend foundation for video upload and processing: queue technology, 10GB upload protocol, object-storage layout, video worker process model, FFmpeg integration, media access strategy, streaming/download delivery, unique URL identifier, video status lifecycle, and the storage test strategy."
+scope_description: "Backend foundation for video upload and processing: queue technology, 10GB upload protocol, object-storage layout, video worker process model, FFmpeg integration, media access strategy, streaming/download delivery, unique URL identifier, video status lifecycle, the storage test strategy, the queue test strategy, upload size/content-type enforcement, and the authorization policy for media delivery."
 ---
 
 # Technical Decisions — Phase 03: Upload e Processamento de Vídeos
@@ -11,9 +11,9 @@ scope_description: "Backend foundation for video upload and processing: queue te
 _Subprojects in scope:_
 
 - `nestjs-project/` — backend that delivers the whole phase: video module and entity, object-storage integration, upload handshake endpoints, queue producer, video worker (FFmpeg), streaming/download endpoints, and the new Compose services (storage, queue broker if any, worker).
-- `next-frontend/` — **no open decision in this document.** Fase 03 has no UI capability bullet; the video surfaces (player page, upload screen, management panel) belong to Fases 04, 05 and 07. Two TDs here are marked `Cross-layer` because their contract is consumed by a client (upload handshake in TD-02, delivery mechanism in TD-07) — they are decided once, now, so the frontend inherits a settled contract when those phases start.
+- `next-frontend/` — **no open decision in this document.** Fase 03 has no UI capability bullet; the video surfaces (player page, upload screen, management panel) belong to Fases 04, 05 and 07. Four TDs here are marked `Cross-layer` because their contract is consumed by a client (upload handshake in TD-02 and its size/content-type enforcement in TD-12, delivery mechanism in TD-07 and its authorization policy in TD-13) — they are decided once, now, so the frontend inherits a settled contract when those phases start.
 
-> **Context7 unavailable.** `CLAUDE.md` mandates library documentation lookup via the context7 MCP server, but this repository's `.mcp.json` registers only `postgres` (and `figma` in `.mcp.json.example`). Options below were researched against primary sources instead — official documentation (AWS S3, BullMQ), the npm registry (installed/latest versions, `type`, `engines`, deprecation flags), and project manifests. Add context7 to `.mcp.json` before `/implement`, where the mandate binds hardest.
+> **Library documentation provenance.** TD-01–TD-10 were researched while the context7 MCP server was not registered in this repository's `.mcp.json`; their options were checked against primary sources instead — official documentation (AWS S3, BullMQ), the npm registry (installed/latest versions, `type`, `engines`, deprecation flags), and project manifests. context7 is registered and available as of TD-11–TD-13, which were researched against it: BullMQ 6.5.3 (PostgreSQL backend, `runMigrations`, `QueueEvents`, `drain`/`obliterate`) and the AWS SDK v3 presigning packages (`s3-request-presigner` header rules, `HeadObject`, `s3-presigned-post` `content-length-range`).
 
 **Installed stack this document is constrained by:** Node 25.6 (container base image), TypeScript 5.7 with `module: nodenext` + `moduleResolution: nodenext` (CommonJS emit), NestJS 11, TypeORM 0.3.28, PostgreSQL 17, Jest 30.
 
@@ -334,6 +334,99 @@ _Subprojects in scope:_
 
 ---
 
+## TD-11: Queue Producer and Consumer Test Strategy
+
+**Scope:** Backend
+
+**Capability:** Serviço de processamento em segundo plano (filas)
+
+**Context:** TD-10 settled the storage half of the phase's test strategy and explicitly deferred the queue half — its Recommendation states that `references/external-systems.md` § "Message Queue", currently a placeholder marked TBD that assumes Redis and `BullModule.forRoot`, "needs to follow whatever TD-01 decides". TD-01 then decided the technology without addressing testing, so no document covers how the producer and the worker are verified, and the testing guide has no row for either artifact type. The choice is strategic for the same reason TD-10 was: the worker holds the phase's riskiest logic (FFmpeg invocation, presigned-URL input, status transitions), and this decides whether that logic is exercised against a real queue or only around it. Two prior decisions constrain the options. TD-01's PostgreSQL backend means a test queue needs no container beyond the `db` already in Compose, but does require `runMigrations()` to initialize BullMQ's own schema — per the official docs, connections do not apply migrations automatically, and the migration is idempotent and concurrency-safe. TD-04's single-image model (one image with FFmpeg, two Compose services with different commands) means FFmpeg is present in whatever container runs the suite.
+
+**Options:**
+
+### Option A: Real `Worker` in-process, driven by `QueueEvents`
+- An integration spec enqueues through the real producer, starts a real `Worker` bound to the real processor against the PostgreSQL-backed queue, awaits the `completed` or `failed` event on a `QueueEvents` instance, then asserts the database row and the MinIO objects. Isolation per spec via a unique queue name plus `queue.obliterate()`.
+- **Pros:** exercises the whole path production runs — job serialization, backend wiring, the processor, and the status transition TD-09 depends on. Retry-to-`failed` becomes observable by feeding a deliberately unprocessable file. No new infrastructure: the queue lives in the `db` service and FFmpeg is in the image per TD-04. Same posture TD-10 chose for storage, and the guide's own placeholder already sketches both producer and consumer assertions.
+- **Cons:** slowest option — a real FFmpeg pass over a fixture plus event round-trips. Worker lifecycle must be closed in `afterEach` or Jest leaks handles, and the suite already runs with `--forceExit`, so a leak would be masked rather than reported. Setup must call `runMigrations()` before the first queue is constructed.
+
+### Option B: Split — real queue for the producer, direct invocation for the processor
+- The producer is asserted against the real queue (`getJobs(['waiting'])`, payload shape) with no `Worker` started; the processor is tested as a plain function invoked with a hand-built `Job`-like argument.
+- **Pros:** fast and deterministic — no worker lifecycle, no event timing, no FFmpeg in the critical path of most specs. Each half is isolated, so a failure points directly at producer or processor.
+- **Cons:** nothing ever runs a real `Worker`, so the hand-written `Queue`/`Worker` provider wiring that TD-01 named as the actual price of its choice is exactly what stays untested. Retry, backoff and the exhausted-attempts transition to `failed` are queue behaviours a direct call cannot reproduce, leaving TD-09's failure policy unverified.
+
+### Option C: Full E2E through the Compose worker service
+- The suite drives the HTTP API and lets the real `video-worker` container pick the job up, polling until the video reports `ready`.
+- **Pros:** the most faithful — the deployed topology, including the container boundary and its FFmpeg build.
+- **Cons:** depends on a second container the test does not control, so failures are hard to attribute and the suite cannot force a failure path. Polling turns timeouts into a tuning parameter. Duplicates Option A's coverage at materially worse diagnosability.
+
+**Recommendation:** **Option A for the job path, keeping Option B's direct invocation for branch-level unit tests** — the phase is graded on the worker actually producing duration, metadata and a thumbnail, and TD-10 already established that the mechanisms most likely to break are the ones that must run for real. Option A costs no new infrastructure here precisely because TD-01 chose the PostgreSQL backend. Option B alone is rejected not for speed but for coverage: it cannot observe the retry-to-`failed` transition TD-09 specifies, and it leaves TD-01's acknowledged wiring cost unexercised. Keeping direct invocation for pure branch logic follows the guide's existing "Service with branching + DB → Unit + Integration" rule rather than replacing it. The consequence is the documentation change TD-10 anticipated: § "Message Queue" must be rewritten from the Redis/`BullModule` placeholder to the PostgreSQL backend with `runMigrations()` in setup and `obliterate()` for isolation, plus a queue producer/consumer row in the guide's artifact table.
+
+**Decision:** _[pending]_
+
+---
+
+## TD-12: Upload Size and Content-Type Enforcement Point
+
+**Scope:** Cross-layer
+
+**Capability:** Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance
+
+**Context:** 10GB is the phase's headline limit, but TD-02 deliberately removed the API from the byte path, so nothing in the current design enforces it — and the AWS SDK cannot help at the signature level. The SDK's presigner sets the payload to `UNSIGNED-PAYLOAD` and adds `content-type` to `unsignableHeaders`, so a presigned `UploadPart` URL constrains neither the size nor the type of what is sent; the SDK's own source notes that content-length range restrictions require `@aws-sdk/s3-presigned-post` with a `["content-length-range", min, max]` policy condition — a POST-form mechanism that does not apply to multipart part uploads. The limit therefore has to be enforced by the application at the handshake boundaries TD-02 defined, or not at all. Cross-layer because whatever is decided becomes a precondition the upload client must satisfy: it fixes what the initiate call declares and which rejection the client handles mid-upload.
+
+**Options:**
+
+### Option A: Declare at initiate, verify with `HeadObject` at complete
+- The initiate call requires `size` and `contentType` and rejects anything above the ceiling or outside the allowed types before creating the draft row or the multipart upload. At complete, the API calls `HeadObject` and compares the real `ContentLength` against the declared value before enqueueing; a mismatch or an over-ceiling object aborts the multipart upload, marks the row `failed` and stores the reason.
+- **Pros:** the only option that actually closes the hole, because it checks the bytes that landed rather than the bytes that were promised — `HeadObject` returns `ContentLength` without downloading the body, so the check is one cheap call. Both enforcement points are endpoints TD-02 already specifies, so no new surface is introduced. The declared size is independently useful: the client needs it to compute a part count, and the orphan-draft reaper needs to know what it is cleaning up.
+- **Cons:** a client can still write up to the ceiling's worth of parts before the complete call rejects them, so a bad-faith upload's storage cost is bounded by the ceiling rather than by zero. Trusting `contentType` at initiate means the real container is only confirmed later, when `ffprobe` reads it in the worker.
+
+### Option B: Sign an exact `ContentLength` into every part URL
+- Each presigned part URL is generated with `content-length` promoted into `signableHeaders`, pinning that part's byte count, so the ceiling becomes `partSize × maxParts` by construction.
+- **Pros:** enforcement moves into the signature, so a part that does not match is rejected by storage itself, before the bytes are accepted.
+- **Cons:** the client must know each part's exact size up front and send it byte-for-byte, which makes the final short part a special case and removes any client-side freedom over part sizing. It bounds each part, not the object, so a total check is still needed somewhere. Promoting extra signable headers also diverges from the SDK's default presigning path for no gain the complete-time check does not already deliver.
+
+### Option C: Quota or policy at the storage layer
+- Express the limit outside the application — a bucket policy or MinIO quota capping object or bucket size.
+- **Pros:** cannot be bypassed by an application bug, and it is declarative infrastructure rather than code.
+- **Cons:** neither S3 nor MinIO offers a per-object maximum size as a bucket-level control, so the closest knob is a bucket-wide quota, which caps total storage rather than one upload and fails for every user at once when reached. It also surfaces a storage-level error the API must translate, with no way to tell the user which rule they broke.
+
+**Recommendation:** **Option A (declare at initiate, verify with `HeadObject` at complete)** — the SDK's presigning model forecloses the elegant answer: a presigned `PUT` cannot carry a size or type constraint, and the mechanism that can (`createPresignedPost`'s `content-length-range`) is a single-request POST form, which the 5GB `PUT` ceiling already ruled out in TD-02. That leaves application-level enforcement, and the two checks belong at the two handshake ends TD-02 already defines: a cheap reject before anything is created, and a verification against reality before anything is enqueued. The residual exposure — bytes written before the complete call rejects them — is bounded by the ceiling and already swept by the `AbortIncompleteMultipartUpload` lifecycle rule TD-03 established. The exact ceiling, the allowed container types and the part size are plan-level parameters; what this TD fixes is that both checks exist and where they live.
+
+**Decision:** _[pending]_
+
+---
+
+## TD-13: Authorization Policy for Streaming and Download
+
+**Scope:** Cross-layer
+
+**Capability:** Transversal — covers: Reprodução via streaming (sem necessidade de download completo); Download do vídeo pelo usuário
+
+**Context:** TD-07 decided *how* media is delivered — a short-lived presigned GET minted by the API — and both of its options reason about authorization being enforced "at the moment the URL is issued", but neither says who passes that check. The question cannot be deferred to Fase 04, because the global `JwtAuthGuard` from `phase-02-auth/TD-02` makes every new endpoint authenticated unless it carries the existing `@Public()` decorator: declining to decide is itself a decision, and the strictest one. Meanwhile TD-09 deliberately kept the status enum technical and left publication to Fase 04, so Fase 03 has no visibility column to authorize against, while `CLAUDE.md` states that anonymous users watch freely and only social features require authentication. Cross-layer because the answer determines whether the Fase 04/05 player page is a public route or sits inside the authenticated chrome.
+
+**Options:**
+
+### Option A: Public for `ready` videos; every other state refuses
+- The signing endpoints carry `@Public()` and authorize on the video's own state: a URL is issued only when `status = ready`, and `draft` / `uploading` / `processing` / `failed` return the same not-found response regardless of who asks.
+- **Pros:** matches the product rule in `CLAUDE.md` — anonymous watching is the platform's default — and the phase's deliverable "streaming funcionando" is demonstrable without a token. Drafts and failures stay protected because what guards them is the status check, not an identity check. Consistent with TD-03, which already made the thumbnail bucket public. The owner can watch their own video before Fase 04 ships publication, with no special case. TD-08's 64-bit unguessable identifier is the de-facto unlisted mechanism in the interval — precisely the gap Fase 04 closes with an explicit visibility field.
+- **Cons:** every `ready` video is watchable by anyone holding its URL as soon as processing finishes, with no way to express "not yet published" until Fase 04 adds the field. Fase 04 must then *restrict* this route, and tightening is the direction in which an existing client can break.
+
+### Option B: Owner-only until Fase 04 introduces visibility
+- The endpoints stay under the global guard and additionally require the requesting user to own the video's channel.
+- **Pros:** the most conservative reading of a phase with no visibility model — nothing is reachable by a third party before publication exists, so no window of accidental exposure opens. Fase 04 then *widens* the rule, which cannot break an existing consumer.
+- **Cons:** contradicts the product rule that anonymous users watch freely, so the phase ships a streaming capability no anonymous viewer can use and an acceptance criterion demonstrable only with a token. It also encodes an authorization model that exists purely as a placeholder — the same speculative-schema objection TD-09 raised against its own Option B.
+
+### Option C: Any authenticated user
+- Require a valid JWT but perform no ownership check; `ready` is still the gate.
+- **Pros:** trivially simple, and it keeps an audit identity on every signing call, which a future view-count or abuse-limit feature could use.
+- **Cons:** has no basis in the product — authentication gates social features, not watching — and it protects nothing Option A does not, since anyone can register. It is Option A's exposure with Option B's friction.
+
+**Recommendation:** **Option A (public for `ready`, state-gated)** — the product rule is explicit that watching is anonymous, the phase is graded on streaming and download working, and the mechanism already exists in `@Public()`. The decisive point is what actually guards the sensitive cases: the `status = ready` condition, not the caller's identity, and that condition is equally effective against anonymous and authenticated strangers. Option B's safety is real, but it buys protection for a concept — unpublished-but-ready — that TD-09 deliberately declined to model in this phase, and it would make the phase's own deliverable undemonstrable without credentials. The cost worth recording is directional: Fase 04 will tighten this route when it introduces visibility, so the authorization decision should live in one place in the signing path rather than being inlined at each call site. Download follows the identical rule, since TD-07 already made it the same mechanism with a content-disposition override.
+
+**Decision:** _[pending]_
+
+---
+
 ## Decisions Summary
 
 | ID | Scope | Decision | Recommendation | Choice |
@@ -348,3 +441,6 @@ _Subprojects in scope:_
 | TD-08 | Backend | Unique Video URL Identifier | C (`crypto.randomBytes` base64url) | C (`crypto.randomBytes` base64url) |
 | TD-09 | Backend | Video Status Lifecycle and Processing Failure Policy | A (single technical `status` enum) | A (Single technical `status` enum) |
 | TD-10 | Backend | Object Storage Abstraction and Test Strategy | A (single S3 adapter, real MinIO in tests) | A (Single S3 adapter, real MinIO in tests) |
+| TD-11 | Backend | Queue Producer and Consumer Test Strategy | A (real `Worker` in-process via `QueueEvents`, direct invocation kept for branch units) | _[pending]_ |
+| TD-12 | Cross-layer | Upload Size and Content-Type Enforcement Point | A (declare at initiate, verify with `HeadObject` at complete) | _[pending]_ |
+| TD-13 | Cross-layer | Authorization Policy for Streaming and Download | A (public for `ready`, state-gated) | _[pending]_ |
