@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 7/12 completed
+**SIs:** 8/12 completed
 
 ### SI-03.1 — Provisionar object storage e broker no Compose
 - **Status:** completed
@@ -78,9 +78,16 @@
   - O teste de integração do caminho de falha declara o dobro do que envia, então a divergência é produzida de verdade pelo storage — não simulada.
 
 ### SI-03.8 — Expor as rotas autenticadas de upload
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 17 e2e novos (`test/videos-upload.e2e-spec.ts`, autorado do spec) + 1 compilation test; suíte e2e completa 69 passing / 4 suites, **estável em 3 execuções consecutivas**; unit+integração 247 passing / 34 suites, `tsc --noEmit` exit 0, lint exit 0
+- **Observations:**
+  - **Defeito pré-existente encontrado e corrigido: os e2e rodavam em paralelo.** O `test/jest-e2e.json` não tinha `maxWorkers` e o script `test:e2e` não passa `--runInBand`, apesar de `nestjs-project/CLAUDE.md` § Test execution afirmar que os e2e "must be run with `--runInBand`" e que isso já estaria configurado. Com workers paralelos, o `cleanAllTables` de um spec apagava usuário/canal no meio de um insert de outro, produzindo `insert or update ... violates foreign key constraint` em `refresh_tokens` e `videos` — e `500` nas rotas de auth. Ficou latente até agora porque só a `auth.e2e` mutava as tabelas compartilhadas; meu spec é o segundo. Corrigido com `"maxWorkers": 1` no config, o que torna verdadeira a afirmação do CLAUDE.md em vez de exigir mudança nela.
+  - **Dois becos sem saída meus antes de achar a causa**, registrados porque custaram tempo: trocar o `cleanAllTables` por `TRUNCATE ... CASCADE` (piorou — lock exclusivo conflita com o pool do app vivo; revertido) e reescrever o spy de mail (o `mockImplementationOnce` realmente enfileira one-shots e desalinha, então a mudança para `mockImplementation` + `mockRestore` por chamada ficou, mas não era a causa). O que destravou foi parar de teorizar e ler o log do servidor, onde o FK violation estava explícito.
+  - **Diagnóstico embutido no helper:** `registerConfirmAndLogin` agora valida o status de cada passo e lança mensagem nomeando o passo e o corpo. Sem isso, um register falho aparece muito depois como `401`/`404` opaco na rota sob teste.
+  - **Helper de auth criado em `src/test/auth-e2e.helper.ts`** e usado só pelos meus specs. A `auth.e2e-spec.ts` mantém a cópia local da cadeia register→confirm→login; convergir as duas é mudança separada, para não embutir refactor de spec da Fase 02 num SI de feature.
+  - **Asserção minha corrigida:** eu assertava que a URL pré-assinada não contém `/videos/`, mas contém — é o nome do bucket em path-style. O que prova a intenção é ser absoluta, ter `X-Amz-Signature` e não apontar para a porta da API.
+  - **AC #6 fechada por verificação direta**, não por e2e: `npm run openapi:export` roda e as quatro rotas (incluindo o `delete` em `/videos/{id}`) estão no `openapi.json`. Era a lacuna que o spec registrou como deliberada.
+  - `ParseUUIDPipe` nos params: id malformado vira `400` em vez de estourar no driver.
 
 ### SI-03.9 — Expor as rotas públicas de entrega
 - **Status:** pending
