@@ -4,6 +4,10 @@ libs:
     version: "^6.7.2"
     context7_id: "/taskforcesh/bullmq"
     fetched_at: "2026-11-08T19:09:44-03:00"
+  "ioredis":
+    version: "^6.0.0"
+    context7_id: "/taskforcesh/bullmq"
+    fetched_at: "2026-11-08T19:09:44-03:00"
   "@aws-sdk/client-s3":
     version: "^3.1164.0"
     context7_id: "/aws/aws-sdk-js-v3"
@@ -25,55 +29,41 @@ Docs cache for the libraries this phase introduces. Fetched via the context7 MCP
 | Lib | Latest | `main` | `engines.node` |
 |-----|--------|--------|----------------|
 | `bullmq` | 6.7.2 | `./dist/cjs/index.js` | `>=14.18.0` |
+| `ioredis` | 6.0.0 | `./built/index.js` | — |
 | `@aws-sdk/client-s3` | 3.1164.0 | `./dist-cjs/index.js` | `>=20.0.0` |
 | `@aws-sdk/s3-request-presigner` | 3.1164.0 | `./dist-cjs/index.js` | `>=20.0.0` |
 
-None declares `type: module`, so no `require(esm)` interop is needed — this is the property TD-01 and TD-02 relied on when rejecting `pg-boss@12`, `@tus/server@2` and `nanoid@6`.
+None declares `type: module`, so no `require(esm)` interop is needed — this is the property TD-02 and TD-08 relied on when rejecting `@tus/server@2` and `nanoid@6`, and the property that disqualified `@nestjs/bullmq@12.0.1` in `TD-14` (it *is* `type: module`, and its exports map points the `require` condition at the same ESM build).
+
+**`bullmq@6` declares its drivers as optional peer dependencies** — `pg >=8`, `redis >=5`, `ioredis >=5` and `bullmq-otel >=2`, all with `optional: true`. The backend is pluggable, so the driver for the chosen backend must be installed explicitly. `TD-14` chose Redis, hence `ioredis`.
 
 ---
 
 ### bullmq
 
-Introduced by `phase-03-videos/TD-01` (BullMQ 6 on the PostgreSQL backend) and `phase-03-videos/TD-11` (real `Worker` in-process in tests).
+Introduced by `phase-03-videos/TD-14` (BullMQ 6 on a dedicated Redis service, superseding `TD-01`'s PostgreSQL backend) and `phase-03-videos/TD-11` (real `Worker` in-process in tests).
 
-**PostgreSQL backend — `createPostgresBackend` is passed as the LAST constructor argument.** The same API runs on PostgreSQL 13+ (the project runs 17). `pg` is already installed as a TypeORM peer.
+**Default (Redis) backend — no factory argument.** `Queue` and `Worker` take the queue name, the processor and the options; `connection` points at the `redis` Compose service. Per `TD-14` these are hand-written providers in a `QueueModule` — `@nestjs/bullmq` is deliberately not used.
 
 ```typescript
-import { Queue, Worker, createPostgresBackend } from 'bullmq';
+import { Queue, Worker } from 'bullmq';
 
-const opts = { connection: 'postgres://user:password@db:5432/streamtube' };
+const connection = { host: 'redis', port: 6379 };   // Compose service name — never localhost
 
-const queue = new Queue('video-processing', opts, createPostgresBackend);
+const queue = new Queue('video-processing', { connection });
 
 const worker = new Worker(
   'video-processing',
   async job => {
-    // ... process the job exactly as you would with the Redis backend
+    // ... process the job
   },
-  opts,
-  createPostgresBackend,
+  { connection, concurrency: 1 },
 );
 ```
 
-`connection` accepts anything node-postgres understands — a connection string, a pool config, or a `pg.Pool`. TypeScript infers the backend and connection types from the factory.
+> **No `runMigrations()` step.** BullMQ's schema migration (`runMigrations(client)`) and the `createPostgresBackend` factory exist only for the PostgreSQL backend, which `TD-14` superseded. Neither appears in this phase. The Redis backend needs no bootstrap beyond a reachable broker.
 
-**Schema migrations are NOT automatic.** Per the official docs: "Connections do not apply migrations automatically. The migration is idempotent and concurrency-safe, but schema downgrades are not supported." Run once, as a deployment step — and, per TD-11, in test setup before the first queue is constructed:
-
-```typescript
-import { Pool } from 'pg';
-import { runMigrations } from 'bullmq';
-
-const pool = new Pool({ connectionString: 'postgres://db:5432/streamtube' });
-const client = await pool.connect();
-try {
-  await runMigrations(client);
-} finally {
-  client.release();
-  await pool.end();
-}
-```
-
-> Note: BullMQ initializes its own `bullmq` schema through `runMigrations()`, outside the project's TypeORM migration chain. TD-01 recorded this as a known cost.
+> **Durability is a configuration choice, not a default.** Redis is in-memory by default, so an enqueued job does not survive a broker restart unless persistence is on. `TD-14` accepted this as the real cost of the visible-broker requirement and specifies `appendonly yes` on the Redis service — the property the PostgreSQL backend provided for free via WAL/fsync.
 
 **Retry and backoff — the primitives TD-09's failure policy depends on.** Queue-level retries absorb transient faults; the row only reaches `failed` once attempts are exhausted.
 
@@ -117,7 +107,15 @@ await queue.obliterate();  // everything
 
 > Reminder from TD-11: close the `Worker` (and the `QueueEvents` instance) in `afterEach`, or Jest leaks handles. The suite currently runs with `--forceExit`, which would mask the leak instead of reporting it.
 
-> `@nestjs/bullmq` is NOT used in this phase — per TD-01 it does not accept a backend factory, so `Queue` and `Worker` are hand-written providers in a `QueueModule`.
+> `@nestjs/bullmq` is NOT used in this phase. `TD-01` originally excluded it because `@nestjs/bullmq@12` does not accept a backend factory, which mattered for the PostgreSQL backend; `TD-14` moved to Redis, where that objection disappears, and excluded it on a different ground — `@nestjs/bullmq@12.0.1` is `type: module` with its `require` export condition pointing at the ESM build, so a `nodenext`/CJS project reaches it only through Node's `require(esm)` interop. `Queue` and `Worker` therefore remain hand-written providers in a `QueueModule`, which is also what the plan already assumed.
+
+---
+
+### ioredis
+
+Introduced by `phase-03-videos/TD-14` as BullMQ's Redis driver. It is an **optional peer dependency** of `bullmq@6` (`ioredis >=5`), not a transitive one, so it must be a direct dependency of the project. `ioredis@6` is CommonJS (`main: ./built/index.js`).
+
+The phase does not use `ioredis` directly: BullMQ consumes it internally once installed, and the application passes a plain `connection` object (`{ host, port }`) to `Queue` and `Worker`. It appears here because it is a dependency the phase adds and a version the implementation must pin — not because any code imports it.
 
 ---
 

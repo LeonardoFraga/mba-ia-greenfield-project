@@ -1,7 +1,7 @@
 ---
 scope_type: phase
 related_phases: [3]
-status: pending
+status: decided
 date: 2026-09-22
 scope_description: "Backend foundation for video upload and processing: queue technology and broker deployment shape, 10GB upload protocol, object-storage layout, video worker process model, FFmpeg integration, media access strategy, streaming/download delivery, unique URL identifier, video status lifecycle, the storage test strategy, the queue test strategy, upload size/content-type enforcement, and the authorization policy for media delivery."
 ---
@@ -20,6 +20,7 @@ _Subprojects in scope:_
 ---
 
 ## TD-01: Message Queue Technology
+<!-- status: superseded-by: phase-03-videos/TD-14 -->
 
 **Scope:** Backend
 
@@ -378,7 +379,11 @@ _Subprojects in scope:_
 **Recommendation:** **Option A for the job path, keeping Option B's direct invocation for branch-level unit tests** — the phase is graded on the worker actually producing duration, metadata and a thumbnail, and TD-10 already established that the mechanisms most likely to break are the ones that must run for real. Option A costs no new infrastructure here precisely because TD-01 chose the PostgreSQL backend. Option B alone is rejected not for speed but for coverage: it cannot observe the retry-to-`failed` transition TD-09 specifies, and it leaves TD-01's acknowledged wiring cost unexercised. Keeping direct invocation for pure branch logic follows the guide's existing "Service with branching + DB → Unit + Integration" rule rather than replacing it. The consequence is the documentation change TD-10 anticipated: § "Message Queue" must be rewritten from the Redis/`BullModule` placeholder to the PostgreSQL backend with `runMigrations()` in setup and `obliterate()` for isolation, plus a queue producer/consumer row in the guide's artifact table.
 
 **Decision:** A (Real `Worker` in-process via `QueueEvents`; direct processor invocation kept for branch-level unit tests)
-**Libraries:** bullmq
+**Libraries:** bullmq, ioredis
+
+**Revisions:**
+- 2026-11-08 — Backend mechanics updated for TD-14: the connection target is the `redis` Compose service rather than the `db` service, and setup no longer calls `runMigrations()` — that step exists only for BullMQ's PostgreSQL backend, which TD-14 supersedes. `ioredis` joins the Libraries line as BullMQ's optional peer for the Redis driver. Unchanged: the chosen strategy itself (real `Worker` in-process awaiting `completed`/`failed` on `QueueEvents`, `obliterate()` for per-spec isolation, `worker.close()` in `afterEach`, direct processor invocation kept for branch-level units) — every one of those is backend-independent. Rationale: param updated to match new lib version — the superseding TD changed the broker, not the test strategy.
+- 2026-11-08 — Testing-guide override for the queue re-anchored here and on TD-14, since TD-01 is now superseded and drops out of active enumeration. The guide's § "Message Queue" (Redis + `BullModule.forRoot`) and its § 2 `BullModule.registerQueue()` example remain inapplicable: TD-14 keeps `Queue` and `Worker` as hand-written providers with no `BullModule`, so the only part of the guide's placeholder that TD-14 happens to vindicate is Redis as the broker. Rationale: path moved to follow ownership convention — correcting the guide stays a separate task per `CLAUDE.md` § Scope Limits.
 
 ---
 
@@ -473,7 +478,8 @@ _Subprojects in scope:_
 
 **Recommendation:** **Option A (Redis with hand-written providers)** — the criterion asks for a queue running in Compose, and the only option that makes that true by inspection rather than by explanation is a broker service of its own. Between the two Redis shapes, Option A is strictly cheaper here: the hand-written `QueueModule` is already what the plan assumed under TD-01, so nothing in the job code or the module layout changes, while Option B would reintroduce the ESM-only dependency this build has twice avoided to buy decorator sugar the project does not need — and the stale testing-guide snippets it would fix are already owned by the separate guide-correction task. Option C remains the better decision on engineering merit alone and is recorded here as such; it loses on a non-engineering criterion that is nonetheless the one the phase is graded against. The durability gap is the real cost to accept: pin `appendonly yes` on the Redis service so an enqueued job survives a broker restart, which is the property TD-01 got for free from PostgreSQL.
 
-**Decision:** _[pending]_
+**Decision:** A (Redis service + hand-written `Queue`/`Worker` providers)
+**Libraries:** bullmq, ioredis
 
 ---
 
@@ -494,4 +500,4 @@ _Subprojects in scope:_
 | TD-11 | Backend | Queue Producer and Consumer Test Strategy | A (real `Worker` in-process via `QueueEvents`, direct invocation kept for branch units) | A (Real `Worker` in-process via `QueueEvents`; direct processor invocation kept for branch-level unit tests) |
 | TD-12 | Cross-layer | Upload Size and Content-Type Enforcement Point | A (declare at initiate, verify with `HeadObject` at complete) | A (Declare at initiate, verify with `HeadObject` at complete) |
 | TD-13 | Cross-layer | Authorization Policy for Streaming and Download | A (public for `ready`, state-gated) | A (Public for `ready`, state-gated) |
-| TD-14 | Backend | Queue Broker Deployment Shape _(supersedes TD-01)_ | A (Redis service + hand-written `Queue`/`Worker` providers) | _[pending]_ |
+| TD-14 | Backend | Queue Broker Deployment Shape _(supersedes TD-01)_ | A (Redis service + hand-written `Queue`/`Worker` providers) | A (Redis service + hand-written `Queue`/`Worker` providers) |
