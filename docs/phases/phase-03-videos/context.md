@@ -3,7 +3,7 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-09-20T12:27:44-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T19:08:46-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T19:26:14-03:00"
   docs/decisions/technical-decisions-openapi-docs-nestjs.md: "2026-09-20T12:27:44-03:00"
   docs/phases/phase-01-configuracao-base/context.md: "2026-09-20T12:27:44-03:00"
   docs/phases/phase-02-auth/context.md: "2026-09-20T12:27:44-03:00"
@@ -66,6 +66,7 @@ sources_mtime:
 | phase-03-videos/TD-11 | phase | Backend | Queue Producer and Consumer Test Strategy | decided | A (Real `Worker` in-process via `QueueEvents`) | bullmq |
 | phase-03-videos/TD-12 | phase | Cross-layer | Upload Size and Content-Type Enforcement Point | decided | A (Declare at initiate, verify with `HeadObject` at complete) | @aws-sdk/client-s3, @aws-sdk/s3-request-presigner |
 | phase-03-videos/TD-13 | phase | Cross-layer | Authorization Policy for Streaming and Download | decided | A (Public for `ready`, state-gated) | — |
+| phase-03-videos/TD-14 | phase | Backend | Queue Broker Deployment Shape — supersedes phase-03-videos/TD-01 | pending | — | — |
 
 _Source files:_
 
@@ -80,7 +81,7 @@ _The `Renders in` column is omitted: no TD in the kept set declares a `**Renders
 | Capability (from project-plan.md) | Covered by |
 |-----------------------------------|------------|
 | Serviço de armazenamento de arquivos (vídeos e thumbnails) | phase-03-videos/TD-03, phase-03-videos/TD-10 |
-| Serviço de processamento em segundo plano (filas) | phase-03-videos/TD-01, phase-03-videos/TD-04, phase-03-videos/TD-11 |
+| Serviço de processamento em segundo plano (filas) | phase-03-videos/TD-01, phase-03-videos/TD-04, phase-03-videos/TD-11, phase-03-videos/TD-14 |
 | Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance | phase-03-videos/TD-02, phase-03-videos/TD-12 |
 | Pré-cadastro automático do vídeo como rascunho ao iniciar o upload | phase-03-videos/TD-02, phase-03-videos/TD-09 |
 | Processamento automático do vídeo após upload (extração de duração e metadados) | phase-03-videos/TD-04, phase-03-videos/TD-05, phase-03-videos/TD-06, phase-03-videos/TD-09 |
@@ -355,7 +356,9 @@ Refer to the `testing-guide-nestjs-project` Skill for layer requirements per art
 | Artifact class | Guide says | This phase does | Recorded on |
 |----------------|-----------|-----------------|-------------|
 | Storage service (side-effect dep) | `local adapter` / filesystem driver, § "Object Storage" | Single S3 adapter exercised against the **real MinIO container**; a filesystem driver cannot express presigned multipart or range delivery | `phase-03-videos/TD-10` |
-| Queue producer / consumer (no row in the table) | § "Message Queue" is a TBD placeholder assuming Redis + `BullModule.forRoot`; § 2 cites `BullModule.registerQueue()` | BullMQ 6 on the **PostgreSQL backend** with no `BullModule` and no Redis service; `runMigrations()` in setup, `obliterate()` for isolation, real `Worker` driven by `QueueEvents`, direct processor invocation kept for branch-level units | `phase-03-videos/TD-01`, `phase-03-videos/TD-11` |
+| Queue producer / consumer (no row in the table) | § "Message Queue" is a TBD placeholder assuming Redis + `BullModule.forRoot`; § 2 cites `BullModule.registerQueue()` | BullMQ 6 with no `BullModule`; real `Worker` driven by `QueueEvents`, `obliterate()` for isolation, direct processor invocation kept for branch-level units. **The broker and its setup step are in flux — see the note below.** | `phase-03-videos/TD-01`, `phase-03-videos/TD-11`, `phase-03-videos/TD-14` |
+
+> **Pending — queue broker shape.** `phase-03-videos/TD-14` is open and supersedes `TD-01`'s choice of the PostgreSQL backend; its recommendation is a dedicated Redis service with hand-written `Queue`/`Worker` providers, driven by the acceptance criterion that the queue must be visible as a Compose service. Until it is decided, two details of the row above are unsettled: the connection target (PostgreSQL's `db` service vs. a `redis` service) and whether setup calls `runMigrations()` (a PostgreSQL-backend-only step). Everything else — the BullMQ API, the retry/backoff semantics `TD-09` depends on, and `TD-11`'s chosen test strategy — is backend-independent and unaffected. `TD-11` will need a `**Revisions:**` entry once `TD-14` lands.
 
 ### next-frontend
 
