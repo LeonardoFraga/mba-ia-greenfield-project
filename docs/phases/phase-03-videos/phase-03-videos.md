@@ -222,7 +222,7 @@ Entregar upload de vídeos de até 10GB sem passar os bytes pela API, processame
 **Description:** Publica o handshake como HTTP sob o guard global, documentado no OpenAPI.
 
 **Route:** POST /videos, POST /videos/:id/parts, POST /videos/:id/complete, DELETE /videos/:id
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-upload.plan.md`
 **Authorization:** Owner (per `### Authorization Matrix`)
 
 **Technical actions:**
@@ -257,7 +257,7 @@ As linhas de E2E ficam de fora desta tabela de propósito: os cenários HTTP sã
 **Description:** Metadata, streaming e download abertos, com o estado do vídeo — e não a identidade de quem chama — como porta.
 
 **Route:** GET /videos/:publicId, GET /videos/:publicId/stream, GET /videos/:publicId/download
-**Test Specs:** _pending /plan-test-specs_
+**Test Specs:** see `nestjs-project/specs/videos-delivery.plan.md`
 **Authorization:** Anonymous (per `### Authorization Matrix`)
 
 **Technical actions:**
