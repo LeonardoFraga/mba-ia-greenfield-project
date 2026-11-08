@@ -1,11 +1,11 @@
 ---
 kind: phase
 name: phase-03-videos
-status: clean
-issue_count: 0
+status: dirty
+issue_count: 1
 sources_mtime:
-  docs/phases/phase-03-videos/context.md: "2026-11-08T19:14:05-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T19:08:46-03:00"
+  docs/phases/phase-03-videos/context.md: "2026-11-08T19:30:10-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T19:26:14-03:00"
 issues:
   - id: IC-1
     status: resolved
@@ -51,12 +51,15 @@ issues:
     status: resolved
     summary: "TD-13 pending — authorization policy for streaming and download"
     resolved_by: phase-03-videos/TD-13
+  - id: OQ-4
+    status: open
+    summary: "TD-14 pending — queue broker deployment shape, supersedes TD-01"
 advisories: []
 ---
 
 # phase-03-videos — Validation
 
-All 13 TDs of the slice are `decided`, every capability bullet in `## Capability Coverage` maps to at least one of them, and the three conflicts the earlier rounds surfaced are now adjudicated inside `context.md` rather than left for `/plan-build` to guess at. Check 8 (cross-slice coverage) is suppressed — phase 3 has exactly one phase-scope decisions doc, so `CC-N` / `MC-cross-N` are not meaningful concepts here and the `## Capability Consistency` and `## Cross-slice Advisories` sections are omitted. `UIG-N` is skipped entirely: the phase has no UI capability bullet, so `## UI Inventory` is absent by construction. No custom rules exist in `docs/rules/plan-validate/`, so the custom-findings and suppressions sections are omitted.
+13 of the slice's 14 TDs are `decided` and every capability bullet in `## Capability Coverage` maps to at least one of them. `TD-14` is newly open: it supersedes `TD-01`'s choice of queue backend because the acceptance criterion requires the queue to be visible as a Compose service, which the PostgreSQL backend satisfies in substance but not on inspection. It is tracked as `OQ-4` below. No `IC-N` fires from the overlap — `TD-14` is not decided yet, so there are not two decided TDs with mutually exclusive behaviour, and the supersede marker on `TD-01` is `/plan-resolve`'s to inject. Check 8 (cross-slice coverage) is suppressed — phase 3 has exactly one phase-scope decisions doc, so `CC-N` / `MC-cross-N` are not meaningful concepts here and the `## Capability Consistency` and `## Cross-slice Advisories` sections are omitted. `UIG-N` is skipped entirely: the phase has no UI capability bullet, so `## UI Inventory` is absent by construction. No custom rules exist in `docs/rules/plan-validate/`, so the custom-findings and suppressions sections are omitted.
 
 ## Findings
 
@@ -82,7 +85,7 @@ _None._
 
 ### Unresolved Open Questions
 
-_None._
+- **OQ-4** — TD-14 pending — Queue Broker Deployment Shape, superseding `TD-01`. Resolution: fill the **Decision:** field of TD-14 in `docs/decisions/technical-decisions-phase-03-videos.md`, then re-run `/plan-validate 03`. The recommendation on record is Option A (a dedicated Redis service with hand-written `Queue`/`Worker` providers, `ioredis` installed as BullMQ's optional peer, `appendonly yes` for job durability) over Option B (`@nestjs/bullmq@12`, rejected as `type: module` against this CJS build) and Option C (keep the PostgreSQL backend and document it, the better engineering choice but the one that leaves the criterion resting on the reader). Resolving this issue carries three further edits that `/plan-resolve` owns: the `<!-- status: superseded-by: ... -->` marker on `TD-01`, a `**Revisions:**` entry on `TD-11` replacing the PostgreSQL-backend mechanics (`runMigrations()` in setup, connection target) while leaving its chosen strategy intact, and the queue row plus pending note in `context.md`'s `## Testing Requirements` override table.
 
 ### UI Coverage Gaps
 
