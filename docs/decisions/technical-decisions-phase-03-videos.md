@@ -1,7 +1,7 @@
 ---
 scope_type: phase
 related_phases: [3]
-status: pending
+status: decided
 date: 2026-09-22
 scope_description: "Backend foundation for video upload and processing: queue technology, 10GB upload protocol, object-storage layout, video worker process model, FFmpeg integration, media access strategy, streaming/download delivery, unique URL identifier, video status lifecycle, the storage test strategy, the queue test strategy, upload size/content-type enforcement, and the authorization policy for media delivery."
 ---
@@ -48,6 +48,9 @@ _Subprojects in scope:_
 
 **Decision:** B (BullMQ 6 + PostgreSQL backend)
 
+**Revisions:**
+- 2026-11-08 — Testing-guide override recorded: `testing-guide-nestjs-project/references/external-systems.md` § "Message Queue" still prescribes Redis with `BullModule.forRoot`, and the guide's § 2 cites `BullModule.registerQueue()` as the module-wiring example; neither applies to this decision. The phase artifacts are authoritative — no `BullModule`, no Redis service, `Queue` and `Worker` as hand-written providers against the PostgreSQL backend. Rationale: path moved to follow ownership convention — `.claude/skills/` is provided foundation outside this phase's deliverable, so correcting the guide is tracked as a separate task per `CLAUDE.md` § Scope Limits.
+
 ---
 
 ## TD-02: Large File Upload Protocol (up to 10GB)
@@ -78,6 +81,9 @@ _Subprojects in scope:_
 **Recommendation:** **Option A (multipart with presigned part URLs)** — the 5GB single-`PUT` ceiling removes every single-request design, so the real choice is between orchestrating S3 multipart ourselves and delegating to tus. tus buys byte-level resumption over part-level, which matters for flaky mobile networks but little for a desktop upload that can simply retry a 50MB part; in exchange it adds a second protocol, a second auth surface, and an ESM dependency to a CJS build. Option A keeps everything inside the existing REST + JWT contract, uses the AWS SDK the storage already speaks, and makes the initiate call the natural home for the draft pre-registration the phase asks for. Part size is a plan-level parameter: at 50MB parts a 10GB file is 200 parts, comfortably under the 10,000-part limit.
 
 **Decision:** A (S3 multipart with presigned part URLs)
+
+**Revisions:**
+- 2026-11-08 — Strict-BFF exception recorded: the inherited strict-BFF model (`next-frontend-config-base/TD-03`, carried into this phase by `phase-02-auth-frontend/TD-01`) governs calls to the NestJS API, and presigned storage URLs minted server-side fall outside its scope — so the browser `PUT`ting parts directly to object storage does not violate it. Rationale: param tightened by new policy — the exception is deliberately narrow and travels with this cross-layer contract, so Fases 04/05/07 inherit both together instead of discovering the conflict when the upload screen is built.
 
 ---
 
@@ -172,6 +178,10 @@ _Subprojects in scope:_
 
 **Decision:** A (Distro binaries + `spawn`)
 
+**Revisions:**
+- 2026-11-08 — Thumbnail invocation parameters fixed: one frame seeked at 10% of the duration reported by `ffprobe`, scaled to 1280x720 preserving aspect ratio, encoded as JPEG at a fixed quality. Rationale: param tightened by new policy — a percentage never falls outside the file (a two-second clip and a two-hour film both resolve), unlike a fixed timestamp, and a single seek stays cheap over TD-06's presigned-URL input.
+- 2026-11-08 — Persisted metadata set fixed as a hybrid: discrete columns for what is queried or displayed (`duration_seconds`, `width`, `height`, `size_bytes`) plus a `jsonb` `metadata` column for the `ffprobe` long tail (container, video codec, audio codec, bitrate, framerate). Rationale: param tightened by new policy — indexes the fields Fases 04 and 05 consume without forcing a migration for every additional field `ffprobe` starts returning.
+
 ---
 
 ## TD-06: Worker Media Access Strategy
@@ -233,6 +243,9 @@ _Subprojects in scope:_
 **Recommendation:** **Option B (short-lived presigned GET)** — it is what the architecture already specifies, and it lets storage do the one thing it is unambiguously better at than an application server: serving byte ranges of large objects. The decisive argument is load shape — under Option A the API's capacity is consumed by people watching videos, which is the opposite of the separation this phase builds everywhere else. The leaked-URL window is managed by keeping the TTL short (minutes, not hours), and it is the same trade already accepted on the upload side in TD-02. Download reuses the identical mechanism with a content-disposition override, so the two capabilities cost one implementation rather than two.
 
 **Decision:** B (Short-lived presigned GET)
+
+**Revisions:**
+- 2026-11-08 — Strict-BFF exception recorded: as on TD-02, the inherited strict-BFF model governs calls to the NestJS API only; a presigned GET minted server-side and consumed by the player as its `src` is outside that scope, so direct browser-to-storage range requests do not violate it. Rationale: param tightened by new policy — recorded here as well as on TD-02 because the two cross-layer contracts are inherited independently by different frontend phases.
 
 ---
 
@@ -332,6 +345,9 @@ _Subprojects in scope:_
 
 **Decision:** A (Single S3 adapter, real MinIO in tests)
 
+**Revisions:**
+- 2026-11-08 — Testing-guide override recorded: `references/external-systems.md` § "Object Storage" and the guide's artifact row for "Service with side-effect dep (email, storage)" still prescribe a local filesystem adapter; the phase artifacts are authoritative and the storage specs run against the real MinIO container. Rationale: path moved to follow ownership convention — `.claude/skills/` is provided foundation outside this phase's deliverable, so correcting the guide is tracked as a separate task per `CLAUDE.md` § Scope Limits.
+
 ---
 
 ## TD-11: Queue Producer and Consumer Test Strategy
@@ -361,7 +377,8 @@ _Subprojects in scope:_
 
 **Recommendation:** **Option A for the job path, keeping Option B's direct invocation for branch-level unit tests** — the phase is graded on the worker actually producing duration, metadata and a thumbnail, and TD-10 already established that the mechanisms most likely to break are the ones that must run for real. Option A costs no new infrastructure here precisely because TD-01 chose the PostgreSQL backend. Option B alone is rejected not for speed but for coverage: it cannot observe the retry-to-`failed` transition TD-09 specifies, and it leaves TD-01's acknowledged wiring cost unexercised. Keeping direct invocation for pure branch logic follows the guide's existing "Service with branching + DB → Unit + Integration" rule rather than replacing it. The consequence is the documentation change TD-10 anticipated: § "Message Queue" must be rewritten from the Redis/`BullModule` placeholder to the PostgreSQL backend with `runMigrations()` in setup and `obliterate()` for isolation, plus a queue producer/consumer row in the guide's artifact table.
 
-**Decision:** _[pending]_
+**Decision:** A (Real `Worker` in-process via `QueueEvents`; direct processor invocation kept for branch-level unit tests)
+**Libraries:** bullmq
 
 ---
 
@@ -392,7 +409,8 @@ _Subprojects in scope:_
 
 **Recommendation:** **Option A (declare at initiate, verify with `HeadObject` at complete)** — the SDK's presigning model forecloses the elegant answer: a presigned `PUT` cannot carry a size or type constraint, and the mechanism that can (`createPresignedPost`'s `content-length-range`) is a single-request POST form, which the 5GB `PUT` ceiling already ruled out in TD-02. That leaves application-level enforcement, and the two checks belong at the two handshake ends TD-02 already defines: a cheap reject before anything is created, and a verification against reality before anything is enqueued. The residual exposure — bytes written before the complete call rejects them — is bounded by the ceiling and already swept by the `AbortIncompleteMultipartUpload` lifecycle rule TD-03 established. The exact ceiling, the allowed container types and the part size are plan-level parameters; what this TD fixes is that both checks exist and where they live.
 
-**Decision:** _[pending]_
+**Decision:** A (Declare at initiate, verify with `HeadObject` at complete)
+**Libraries:** @aws-sdk/client-s3, @aws-sdk/s3-request-presigner
 
 ---
 
@@ -423,7 +441,8 @@ _Subprojects in scope:_
 
 **Recommendation:** **Option A (public for `ready`, state-gated)** — the product rule is explicit that watching is anonymous, the phase is graded on streaming and download working, and the mechanism already exists in `@Public()`. The decisive point is what actually guards the sensitive cases: the `status = ready` condition, not the caller's identity, and that condition is equally effective against anonymous and authenticated strangers. Option B's safety is real, but it buys protection for a concept — unpublished-but-ready — that TD-09 deliberately declined to model in this phase, and it would make the phase's own deliverable undemonstrable without credentials. The cost worth recording is directional: Fase 04 will tighten this route when it introduces visibility, so the authorization decision should live in one place in the signing path rather than being inlined at each call site. Download follows the identical rule, since TD-07 already made it the same mechanism with a content-disposition override.
 
-**Decision:** _[pending]_
+**Decision:** A (Public for `ready`, state-gated)
+**Libraries:** —
 
 ---
 
@@ -441,6 +460,6 @@ _Subprojects in scope:_
 | TD-08 | Backend | Unique Video URL Identifier | C (`crypto.randomBytes` base64url) | C (`crypto.randomBytes` base64url) |
 | TD-09 | Backend | Video Status Lifecycle and Processing Failure Policy | A (single technical `status` enum) | A (Single technical `status` enum) |
 | TD-10 | Backend | Object Storage Abstraction and Test Strategy | A (single S3 adapter, real MinIO in tests) | A (Single S3 adapter, real MinIO in tests) |
-| TD-11 | Backend | Queue Producer and Consumer Test Strategy | A (real `Worker` in-process via `QueueEvents`, direct invocation kept for branch units) | _[pending]_ |
-| TD-12 | Cross-layer | Upload Size and Content-Type Enforcement Point | A (declare at initiate, verify with `HeadObject` at complete) | _[pending]_ |
-| TD-13 | Cross-layer | Authorization Policy for Streaming and Download | A (public for `ready`, state-gated) | _[pending]_ |
+| TD-11 | Backend | Queue Producer and Consumer Test Strategy | A (real `Worker` in-process via `QueueEvents`, direct invocation kept for branch units) | A (Real `Worker` in-process via `QueueEvents`; direct processor invocation kept for branch-level unit tests) |
+| TD-12 | Cross-layer | Upload Size and Content-Type Enforcement Point | A (declare at initiate, verify with `HeadObject` at complete) | A (Declare at initiate, verify with `HeadObject` at complete) |
+| TD-13 | Cross-layer | Authorization Policy for Streaming and Download | A (public for `ready`, state-gated) | A (Public for `ready`, state-gated) |

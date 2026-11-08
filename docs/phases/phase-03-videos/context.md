@@ -3,7 +3,7 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-09-20T12:27:44-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T18:51:31-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T19:08:46-03:00"
   docs/decisions/technical-decisions-openapi-docs-nestjs.md: "2026-09-20T12:27:44-03:00"
   docs/phases/phase-01-configuracao-base/context.md: "2026-09-20T12:27:44-03:00"
   docs/phases/phase-02-auth/context.md: "2026-09-20T12:27:44-03:00"
@@ -49,18 +49,23 @@ sources_mtime:
 | Ref | Source | Scope | Topic | Status | Decision | Libraries |
 |-----|--------|-------|-------|--------|----------|-----------|
 | phase-03-videos/TD-01 | phase | Backend | Message Queue Technology | decided | B (BullMQ 6 + PostgreSQL backend) | — |
+|     └─ Last revision: 2026-11-08 — Testing-guide override recorded: `testing-guide-nestjs-project/references/exter… | | | | | | |
 | phase-03-videos/TD-02 | phase | Cross-layer | Large File Upload Protocol (up to 10GB) | decided | A (S3 multipart with presigned part URLs) | — |
+|     └─ Last revision: 2026-11-08 — Strict-BFF exception recorded: the inherited strict-BFF model (`next-frontend-c… | | | | | | |
 | phase-03-videos/TD-03 | phase | Backend | Object Storage Bucket and Key Layout | decided | B (Separate buckets by access policy) | — |
 | phase-03-videos/TD-04 | phase | Backend | Video Worker Process Model | decided | A (Separate container, same codebase, standalone Nest app) | — |
 | phase-03-videos/TD-05 | phase | Backend | FFmpeg Distribution and Invocation | decided | A (Distro binaries + `spawn`) | — |
+|     └─ Last revision: 2026-11-08 — Persisted metadata set fixed as a hybrid: discrete columns for what is queried… | | | | | | |
 | phase-03-videos/TD-06 | phase | Backend | Worker Media Access Strategy | decided | B (Presigned URL as FFmpeg input) | — |
 | phase-03-videos/TD-07 | phase | Cross-layer | Video Streaming and Download Delivery | decided | B (Short-lived presigned GET) | — |
+|     └─ Last revision: 2026-11-08 — Strict-BFF exception recorded: as on TD-02, the inherited strict-BFF model gov… | | | | | | |
 | phase-03-videos/TD-08 | phase | Backend | Unique Video URL Identifier | decided | C (`crypto.randomBytes` base64url) | — |
 | phase-03-videos/TD-09 | phase | Backend | Video Status Lifecycle and Processing Failure Policy | decided | A (Single technical `status` enum) | — |
 | phase-03-videos/TD-10 | phase | Backend | Object Storage Abstraction and Test Strategy | decided | A (Single S3 adapter, real MinIO in tests) | — |
-| phase-03-videos/TD-11 | phase | Backend | Queue Producer and Consumer Test Strategy | pending | — | — |
-| phase-03-videos/TD-12 | phase | Cross-layer | Upload Size and Content-Type Enforcement Point | pending | — | — |
-| phase-03-videos/TD-13 | phase | Cross-layer | Authorization Policy for Streaming and Download | pending | — | — |
+|     └─ Last revision: 2026-11-08 — Testing-guide override recorded: `references/external-systems.md` § "Object Sto… | | | | | | |
+| phase-03-videos/TD-11 | phase | Backend | Queue Producer and Consumer Test Strategy | decided | A (Real `Worker` in-process via `QueueEvents`) | bullmq |
+| phase-03-videos/TD-12 | phase | Cross-layer | Upload Size and Content-Type Enforcement Point | decided | A (Declare at initiate, verify with `HeadObject` at complete) | @aws-sdk/client-s3, @aws-sdk/s3-request-presigner |
+| phase-03-videos/TD-13 | phase | Cross-layer | Authorization Policy for Streaming and Download | decided | A (Public for `ready`, state-gated) | — |
 
 _Source files:_
 
@@ -68,7 +73,7 @@ _Source files:_
 
 _No `scope_type: ad-hoc` doc declares phase 3 in `related_phases`; the ad-hoc set contributing here comes from correlator confirmation (see `## Inherited Decisions Detail`). The correlator additionally ranked `next-frontend-openapi-typing` as `medium` and was not confirmed — its concern (making the cross-layer handshake and delivery contracts codegen-friendly) is inherited indirectly via `openapi-docs-nestjs/TD-02`._
 
-_The `Renders in` column is omitted: no TD in the kept set declares a `**Renders in:**` field, so the table renders in its 7-column legacy form. No TD declares a structured `**Libraries:**` field yet — `/plan-resolve` fixes the new libraries and writes `library-refs.md`._
+_The `Renders in` column is omitted: no TD in the kept set declares a `**Renders in:**` field, so the table renders in its 7-column legacy form and default-by-inference is left for `plan-build` A2 to resolve. The three libraries this phase introduces are pinned in `library-refs.md`._
 
 ## Capability Coverage
 
@@ -91,10 +96,16 @@ _The `Renders in` column is omitted: no TD in the kept set declares a `**Renders
 **Recommendation:** the queue carries a handful of jobs per minute, so Redis's throughput advantage buys nothing, while the fourth container costs a service, a config namespace and a healthcheck in every environment. BullMQ's PG backend is not a downgrade path: it is the same API with documented feature parity, and it is durable without tuning. The real price is the missing `@nestjs/bullmq` integration — `Queue` and `Worker` become explicit providers in a `QueueModule`, which is perhaps thirty lines and arguably clearer than decorator magic for a two-queue system. If that wiring turns out to fight the framework during implementation, Option A is the fallback and the job-handling code is unchanged, since both options are the same BullMQ API.
 **Libraries:** —
 
+**Revisions:**
+- 2026-11-08 — Testing-guide override recorded: `testing-guide-nestjs-project/references/external-systems.md` § "Message Queue" still prescribes Redis with `BullModule.forRoot`, and the guide's § 2 cites `BullModule.registerQueue()` as the module-wiring example; neither applies to this decision. The phase artifacts are authoritative — no `BullModule`, no Redis service, `Queue` and `Worker` as hand-written providers against the PostgreSQL backend. Rationale: path moved to follow ownership convention — `.claude/skills/` is provided foundation outside this phase's deliverable, so correcting the guide is tracked as a separate task per `CLAUDE.md` § Scope Limits.
+
 ### phase-03-videos/TD-02
 
 **Recommendation:** the 5GB single-`PUT` ceiling removes every single-request design, so the real choice is between orchestrating S3 multipart ourselves and delegating to tus. tus buys byte-level resumption over part-level, which matters for flaky mobile networks but little for a desktop upload that can simply retry a 50MB part; in exchange it adds a second protocol, a second auth surface, and an ESM dependency to a CJS build. Option A keeps everything inside the existing REST + JWT contract, uses the AWS SDK the storage already speaks, and makes the initiate call the natural home for the draft pre-registration the phase asks for. Part size is a plan-level parameter: at 50MB parts a 10GB file is 200 parts, comfortably under the 10,000-part limit.
 **Libraries:** —
+
+**Revisions:**
+- 2026-11-08 — Strict-BFF exception recorded: the inherited strict-BFF model (`next-frontend-config-base/TD-03`, carried into this phase by `phase-02-auth-frontend/TD-01`) governs calls to the NestJS API, and presigned storage URLs minted server-side fall outside its scope — so the browser `PUT`ting parts directly to object storage does not violate it. Rationale: param tightened by new policy — the exception is deliberately narrow and travels with this cross-layer contract, so Fases 04/05/07 inherit both together instead of discovering the conflict when the upload screen is built.
 
 ### phase-03-videos/TD-03
 
@@ -111,6 +122,10 @@ _The `Renders in` column is omitted: no TD in the kept set declares a `**Renders
 **Recommendation:** with `fluent-ffmpeg` archived, the wrapper layer is not worth resurrecting for two commands, and `spawn` is what any wrapper would have done anyway. Between distro and npm-shipped binaries, the worker only ever runs in its own container (TD-04), so the Dockerfile is already the version-pinning surface and the reproducibility argument for Option B mostly evaporates — while its multi-architecture postinstall is a real hazard on a project developed on Apple Silicon and run in Linux containers. Pin the FFmpeg version explicitly in the Dockerfile rather than inheriting whatever the base image floats to.
 **Libraries:** —
 
+**Revisions:**
+- 2026-11-08 — Thumbnail invocation parameters fixed: one frame seeked at 10% of the duration reported by `ffprobe`, scaled to 1280x720 preserving aspect ratio, encoded as JPEG at a fixed quality. Rationale: param tightened by new policy — a percentage never falls outside the file (a two-second clip and a two-hour film both resolve), unlike a fixed timestamp, and a single seek stays cheap over TD-06's presigned-URL input.
+- 2026-11-08 — Persisted metadata set fixed as a hybrid: discrete columns for what is queried or displayed (`duration_seconds`, `width`, `height`, `size_bytes`) plus a `jsonb` `metadata` column for the `ffprobe` long tail (container, video codec, audio codec, bitrate, framerate). Rationale: param tightened by new policy — indexes the fields Fases 04 and 05 consume without forcing a migration for every additional field `ffprobe` starts returning.
+
 ### phase-03-videos/TD-06
 
 **Recommendation:** the worker's job is to read a header and one frame, and Option A pays a full 10GB transfer plus matching disk for that. FFmpeg's HTTP input with range seeking is exactly the mechanism this case is designed for, and it keeps the worker container stateless, which matters directly for TD-04's separate-container model. The `moov`-at-the-end caveat is real but bounded — it costs extra range requests, not correctness — and if measurements later show it dominating, Option A remains available as a per-job fallback without changing anything else. Option C is a partial Option B that fails in exactly the cases Option B handles.
@@ -120,6 +135,9 @@ _The `Renders in` column is omitted: no TD in the kept set declares a `**Renders
 
 **Recommendation:** it is what the architecture already specifies, and it lets storage do the one thing it is unambiguously better at than an application server: serving byte ranges of large objects. The decisive argument is load shape — under Option A the API's capacity is consumed by people watching videos, which is the opposite of the separation this phase builds everywhere else. The leaked-URL window is managed by keeping the TTL short (minutes, not hours), and it is the same trade already accepted on the upload side in TD-02. Download reuses the identical mechanism with a content-disposition override, so the two capabilities cost one implementation rather than two.
 **Libraries:** —
+
+**Revisions:**
+- 2026-11-08 — Strict-BFF exception recorded: as on TD-02, the inherited strict-BFF model governs calls to the NestJS API only; a presigned GET minted server-side and consumed by the player as its `src` is outside that scope, so direct browser-to-storage range requests do not violate it. Rationale: param tightened by new policy — recorded here as well as on TD-02 because the two cross-layer contracts are inherited independently by different frontend phases.
 
 ### phase-03-videos/TD-08
 
@@ -134,6 +152,24 @@ _The `Renders in` column is omitted: no TD in the kept set declares a `**Renders
 ### phase-03-videos/TD-10
 
 **Recommendation:** the two-driver design in the testing guide was written for a phase where storage meant "put a file somewhere", and this phase's storage is a protocol, not a filesystem. Presigned multipart and range delivery are the parts most likely to break and least likely to be caught by review, so they are precisely what must run against a real S3 implementation; a local driver cannot even express them. MinIO is the same API as production S3, and the project already accepts this pattern for the database and for mail. The consequence is a documentation change, not just a code one: `references/external-systems.md` § "Object Storage" needs to be updated to describe MinIO, and its § "Message Queue" section — currently a Redis/BullMQ placeholder marked TBD — needs to follow whatever TD-01 decides.
+**Libraries:** —
+
+**Revisions:**
+- 2026-11-08 — Testing-guide override recorded: `references/external-systems.md` § "Object Storage" and the guide's artifact row for "Service with side-effect dep (email, storage)" still prescribe a local filesystem adapter; the phase artifacts are authoritative and the storage specs run against the real MinIO container. Rationale: path moved to follow ownership convention — `.claude/skills/` is provided foundation outside this phase's deliverable, so correcting the guide is tracked as a separate task per `CLAUDE.md` § Scope Limits.
+
+### phase-03-videos/TD-11
+
+**Recommendation:** the phase is graded on the worker actually producing duration, metadata and a thumbnail, and TD-10 already established that the mechanisms most likely to break are the ones that must run for real. Option A costs no new infrastructure here precisely because TD-01 chose the PostgreSQL backend. Option B alone is rejected not for speed but for coverage: it cannot observe the retry-to-`failed` transition TD-09 specifies, and it leaves TD-01's acknowledged wiring cost unexercised. Keeping direct invocation for pure branch logic follows the guide's existing "Service with branching + DB → Unit + Integration" rule rather than replacing it. The consequence is the documentation change TD-10 anticipated: § "Message Queue" must be rewritten from the Redis/`BullModule` placeholder to the PostgreSQL backend with `runMigrations()` in setup and `obliterate()` for isolation, plus a queue producer/consumer row in the guide's artifact table.
+**Libraries:** bullmq
+
+### phase-03-videos/TD-12
+
+**Recommendation:** the SDK's presigning model forecloses the elegant answer: a presigned `PUT` cannot carry a size or type constraint, and the mechanism that can (`createPresignedPost`'s `content-length-range`) is a single-request POST form, which the 5GB `PUT` ceiling already ruled out in TD-02. That leaves application-level enforcement, and the two checks belong at the two handshake ends TD-02 already defines: a cheap reject before anything is created, and a verification against reality before anything is enqueued. The residual exposure — bytes written before the complete call rejects them — is bounded by the ceiling and already swept by the `AbortIncompleteMultipartUpload` lifecycle rule TD-03 established. The exact ceiling, the allowed container types and the part size are plan-level parameters; what this TD fixes is that both checks exist and where they live.
+**Libraries:** @aws-sdk/client-s3, @aws-sdk/s3-request-presigner
+
+### phase-03-videos/TD-13
+
+**Recommendation:** the product rule is explicit that watching is anonymous, the phase is graded on streaming and download working, and the mechanism already exists in `@Public()`. The decisive point is what actually guards the sensitive cases: the `status = ready` condition, not the caller's identity, and that condition is equally effective against anonymous and authenticated strangers. Option B's safety is real, but it buys protection for a concept — unpublished-but-ready — that TD-09 deliberately declined to model in this phase, and it would make the phase's own deliverable undemonstrable without credentials. The cost worth recording is directional: Fase 04 will tighten this route when it introduces visibility, so the authorization decision should live in one place in the signing path rather than being inlined at each call site. Download follows the identical rule, since TD-07 already made it the same mechanism with a content-disposition override.
 **Libraries:** —
 
 ## Inherited Decisions Detail
@@ -314,7 +350,12 @@ Refer to the `testing-guide-nestjs-project` Skill for layer requirements per art
 | Exception Filter | Unit + E2E |
 | Middleware | E2E |
 
-_Phase 03 introduces artifact types the guide's `references/external-systems.md` does not settle. For storage, `phase-03-videos/TD-10` decided a single S3 adapter tested against real MinIO, which contradicts the table row above (`local adapter`) and the reference file's § "Object Storage". For the queue, `phase-03-videos/TD-11` is still pending and the guide has no row for a producer or consumer artifact type at all; its § "Message Queue" is a Redis/`BullModule.forRoot` placeholder marked TBD, which `phase-03-videos/TD-01` already contradicts by choosing BullMQ on PostgreSQL with no `@nestjs/bullmq`. The guide's § 2 "Worth testing" list likewise cites `BullModule.registerQueue()` as the module-wiring example. All of these are flagged for update._
+**Phase-local overrides — the phase artifacts win over the guide for these two artifact classes.** The guide's `references/external-systems.md` predates this phase and is stale in two sections; correcting it is tracked as a separate task (`.claude/skills/` is provided foundation outside this phase's deliverable, per `CLAUDE.md` § Scope Limits). The overrides are recorded as `**Revisions:**` entries on the governing TDs and are authoritative for `/implement`:
+
+| Artifact class | Guide says | This phase does | Recorded on |
+|----------------|-----------|-----------------|-------------|
+| Storage service (side-effect dep) | `local adapter` / filesystem driver, § "Object Storage" | Single S3 adapter exercised against the **real MinIO container**; a filesystem driver cannot express presigned multipart or range delivery | `phase-03-videos/TD-10` |
+| Queue producer / consumer (no row in the table) | § "Message Queue" is a TBD placeholder assuming Redis + `BullModule.forRoot`; § 2 cites `BullModule.registerQueue()` | BullMQ 6 on the **PostgreSQL backend** with no `BullModule` and no Redis service; `runMigrations()` in setup, `obliterate()` for isolation, real `Worker` driven by `QueueEvents`, direct processor invocation kept for branch-level units | `phase-03-videos/TD-01`, `phase-03-videos/TD-11` |
 
 ### next-frontend
 
