@@ -62,22 +62,22 @@ Output is **three H2 sections**, in order. All three are required in every succe
 | Ref | Source | Scope | Topic | Status | Decision | Libraries | Renders in |
 |-----|--------|-------|-------|--------|----------|-----------|------------|
 | {slug}/TD-01 | phase | Backend | <topic, ≤60 chars> | pending | — | — | — |
-| {slug}/TD-02 | phase | Repo-wide | <topic> | decided | B | — | — |
-| other-slug/TD-03 | ad-hoc | Backend | <topic> | decided | A | argon2 | — |
+| {slug}/TD-02 | phase | Repo-wide | <topic> | decided | B (short name from the source) | — | — |
+| other-slug/TD-03 | ad-hoc | Backend | <topic> | decided | A (Argon2id) | argon2 | — |
 |     └─ Last revision: 2026-04-27 — Spec file path resolved to nestjs-project/openapi.json | | | | | | | |
 | {slug}/TD-04 | phase | Backend | <topic> | superseded-by other-slug/TD-07 | — | — | — |
-| {slug}/TD-05 | phase | Frontend | <topic> | decided | A | @tanstack/react-query | frontend-runtime |
+| {slug}/TD-05 | phase | Frontend | <topic> | decided | A (TanStack Query global) | @tanstack/react-query | frontend-runtime |
 ```
 
 - **Ref** — `{slug}/TD-NN`; slug = filename minus `technical-decisions-` prefix and `.md` suffix.
 - **Source** — `phase` for `scope_type: phase`, `ad-hoc` otherwise.
 - **Topic** — text after `TD-NN: `; ≤60 chars; no option details.
 - **Status** — `pending` | `decided` | `superseded-by <ref>`.
-- **Decision** — option letter or short name; `—` if pending/superseded.
+- **Decision** — the `**Decision:**` field's value **verbatim**: the option letter together with its parenthetical short name when the source carries one (`B (BullMQ 6 + PostgreSQL backend)`), truncated to 80 chars with a trailing `…` if longer. `—` if pending/superseded. **Never reduce the cell to the bare option letter when the source has more** — downstream `plan-build` reads this cell to name the decision in the plan, and a lone `A` carries no information. (Previously specified as "option letter or short name", which permitted either rendering and produced inconsistent output across invocations.)
 - **Libraries** — comma-separated `**Libraries:**` content; `—` if absent.
 - **Renders in** — value of `**Renders in:**` (one of `ui-contracts` | `frontend-runtime`); `—` when the field is absent in the source TD. Default-by-inference is resolved downstream in `plan-build` A2 filter (which reads this column AND the phase-level `ui_in_scope` flag established by Gate 9), NOT by this agent — this agent surfaces the raw source-doc state only.
 
-**Backwards-compat — column omission.** When the kept set is non-empty AND **every** TD's `Renders in` value is `—` (no TD in scope has the field set explicitly), the `Renders in` column MAY be omitted from the rendered table to preserve compactness of legacy output. Downstream consumers parse by column header name, not by position, so both 7-column (legacy) and 8-column (extended) tables are accepted. When the kept set has ≥1 TD with an explicit value, the column MUST be rendered.
+**Backwards-compat — column omission.** When the kept set is non-empty AND **every** TD's `Renders in` value is `—` (no TD in scope has the field set explicitly), the `Renders in` column **MUST** be omitted from the rendered table. When the kept set has ≥1 TD with an explicit value, the column **MUST** be rendered. Downstream consumers parse by column header name, not by position, so both the 7-column (omitted) and 8-column (rendered) shapes are accepted — but the choice between them is **not** the agent's to make: it is a function of the kept set alone, so the same input always yields the same shape. (Previously worded as "MAY be omitted", which left the choice open and produced an all-`—` 8-column table on some invocations and a 7-column one on others for identical input.)
 
 **Revisions annotation row.** When a TD has a non-empty `**Revisions:**` block (per Procedure step 6), emit an extra table row immediately below the TD's row with the format:
 
