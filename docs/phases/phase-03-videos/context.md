@@ -3,7 +3,7 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-09-20T12:27:44-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-09-26T15:29:05-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T18:51:31-03:00"
   docs/decisions/technical-decisions-openapi-docs-nestjs.md: "2026-09-20T12:27:44-03:00"
   docs/phases/phase-01-configuracao-base/context.md: "2026-09-20T12:27:44-03:00"
   docs/phases/phase-02-auth/context.md: "2026-09-20T12:27:44-03:00"
@@ -35,9 +35,9 @@ sources_mtime:
 
 **Affected subprojects:** `nestjs-project/` — project-plan.md names no subproject paths in the Fase 03 block; every capability is API/worker-side (storage service, queue-based background processing, upload, metadata/thumbnail generation, unique URLs, streaming/download delivery).
 
-**Deferred subprojects:** `next-frontend/` — the phase has no UI capability bullet. The video surfaces (player page, upload screen, management panel) belong to Fases 04, 05 and 07. `technical-decisions-phase-03-videos.md` records `next-frontend/` with an explicit "no open decision" justification.
+**Deferred subprojects:** `next-frontend/` — project-plan.md itself names none; the deferral is declared by `technical-decisions-phase-03-videos.md`'s `_Subprojects in scope:_` note, which records `next-frontend/` as having no open decision because the phase has no UI capability bullet. The video surfaces (player page, upload screen, management panel) belong to Fases 04, 05 and 07.
 
-**Sequencing notes:** "> Depende de: Fase 01, Fase 02" (verbatim dependency line under the phase heading).
+**Sequencing notes:** "> Depende de: Fase 01, Fase 02" (verbatim dependency line under the phase heading). Phase intro line: "Upload de arquivos grandes sem travar o sistema, processamento automático do vídeo e geração de URL única."
 
 **Neighbors (for boundary detection only):**
 
@@ -48,36 +48,41 @@ sources_mtime:
 
 | Ref | Source | Scope | Topic | Status | Decision | Libraries |
 |-----|--------|-------|-------|--------|----------|-----------|
-| phase-03-videos/TD-01 | technical-decisions-phase-03-videos.md | Backend | Message Queue Technology | decided | B (BullMQ 6 + PostgreSQL backend) | — |
-| phase-03-videos/TD-02 | technical-decisions-phase-03-videos.md | Cross-layer | Large File Upload Protocol (up to 10GB) | decided | A (S3 multipart with presigned part URLs) | — |
-| phase-03-videos/TD-03 | technical-decisions-phase-03-videos.md | Backend | Object Storage Bucket and Key Layout | decided | B (Separate buckets by access policy) | — |
-| phase-03-videos/TD-04 | technical-decisions-phase-03-videos.md | Backend | Video Worker Process Model | decided | A (Separate container, same codebase, standalone Nest app) | — |
-| phase-03-videos/TD-05 | technical-decisions-phase-03-videos.md | Backend | FFmpeg Distribution and Invocation | decided | A (Distro binaries + `spawn`) | — |
-| phase-03-videos/TD-06 | technical-decisions-phase-03-videos.md | Backend | Worker Media Access Strategy | decided | B (Presigned URL as FFmpeg input) | — |
-| phase-03-videos/TD-07 | technical-decisions-phase-03-videos.md | Cross-layer | Video Streaming and Download Delivery | decided | B (Short-lived presigned GET) | — |
-| phase-03-videos/TD-08 | technical-decisions-phase-03-videos.md | Backend | Unique Video URL Identifier | decided | C (`crypto.randomBytes` base64url) | — |
-| phase-03-videos/TD-09 | technical-decisions-phase-03-videos.md | Backend | Video Status Lifecycle and Processing Failure Policy | decided | A (Single technical `status` enum) | — |
-| phase-03-videos/TD-10 | technical-decisions-phase-03-videos.md | Backend | Object Storage Abstraction and Test Strategy | decided | A (Single S3 adapter, real MinIO in tests) | — |
+| phase-03-videos/TD-01 | phase | Backend | Message Queue Technology | decided | B (BullMQ 6 + PostgreSQL backend) | — |
+| phase-03-videos/TD-02 | phase | Cross-layer | Large File Upload Protocol (up to 10GB) | decided | A (S3 multipart with presigned part URLs) | — |
+| phase-03-videos/TD-03 | phase | Backend | Object Storage Bucket and Key Layout | decided | B (Separate buckets by access policy) | — |
+| phase-03-videos/TD-04 | phase | Backend | Video Worker Process Model | decided | A (Separate container, same codebase, standalone Nest app) | — |
+| phase-03-videos/TD-05 | phase | Backend | FFmpeg Distribution and Invocation | decided | A (Distro binaries + `spawn`) | — |
+| phase-03-videos/TD-06 | phase | Backend | Worker Media Access Strategy | decided | B (Presigned URL as FFmpeg input) | — |
+| phase-03-videos/TD-07 | phase | Cross-layer | Video Streaming and Download Delivery | decided | B (Short-lived presigned GET) | — |
+| phase-03-videos/TD-08 | phase | Backend | Unique Video URL Identifier | decided | C (`crypto.randomBytes` base64url) | — |
+| phase-03-videos/TD-09 | phase | Backend | Video Status Lifecycle and Processing Failure Policy | decided | A (Single technical `status` enum) | — |
+| phase-03-videos/TD-10 | phase | Backend | Object Storage Abstraction and Test Strategy | decided | A (Single S3 adapter, real MinIO in tests) | — |
+| phase-03-videos/TD-11 | phase | Backend | Queue Producer and Consumer Test Strategy | pending | — | — |
+| phase-03-videos/TD-12 | phase | Cross-layer | Upload Size and Content-Type Enforcement Point | pending | — | — |
+| phase-03-videos/TD-13 | phase | Cross-layer | Authorization Policy for Streaming and Download | pending | — | — |
 
 _Source files:_
 
 - phase-03-videos — `docs/decisions/technical-decisions-phase-03-videos.md` (scope_type: phase, related_phases: [3])
 
-_No `scope_type: ad-hoc` doc declares phase 3 in `related_phases`; the ad-hoc set contributing here comes from correlator confirmation (see `## Inherited Decisions Detail`)._
+_No `scope_type: ad-hoc` doc declares phase 3 in `related_phases`; the ad-hoc set contributing here comes from correlator confirmation (see `## Inherited Decisions Detail`). The correlator additionally ranked `next-frontend-openapi-typing` as `medium` and was not confirmed — its concern (making the cross-layer handshake and delivery contracts codegen-friendly) is inherited indirectly via `openapi-docs-nestjs/TD-02`._
+
+_The `Renders in` column is omitted: no TD in the kept set declares a `**Renders in:**` field, so the table renders in its 7-column legacy form. No TD declares a structured `**Libraries:**` field yet — `/plan-resolve` fixes the new libraries and writes `library-refs.md`._
 
 ## Capability Coverage
 
 | Capability (from project-plan.md) | Covered by |
 |-----------------------------------|------------|
 | Serviço de armazenamento de arquivos (vídeos e thumbnails) | phase-03-videos/TD-03, phase-03-videos/TD-10 |
-| Serviço de processamento em segundo plano (filas) | phase-03-videos/TD-01, phase-03-videos/TD-04 |
-| Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance | phase-03-videos/TD-02 |
+| Serviço de processamento em segundo plano (filas) | phase-03-videos/TD-01, phase-03-videos/TD-04, phase-03-videos/TD-11 |
+| Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance | phase-03-videos/TD-02, phase-03-videos/TD-12 |
 | Pré-cadastro automático do vídeo como rascunho ao iniciar o upload | phase-03-videos/TD-02, phase-03-videos/TD-09 |
 | Processamento automático do vídeo após upload (extração de duração e metadados) | phase-03-videos/TD-04, phase-03-videos/TD-05, phase-03-videos/TD-06, phase-03-videos/TD-09 |
 | Geração automática de thumbnail a partir de um frame do vídeo | phase-03-videos/TD-04, phase-03-videos/TD-05, phase-03-videos/TD-06 |
 | URL única por vídeo, sem conflito com outros vídeos | phase-03-videos/TD-08 |
-| Reprodução via streaming (sem necessidade de download completo) | phase-03-videos/TD-07 |
-| Download do vídeo pelo usuário | phase-03-videos/TD-07 |
+| Reprodução via streaming (sem necessidade de download completo) | phase-03-videos/TD-07, phase-03-videos/TD-13 |
+| Download do vídeo pelo usuário | phase-03-videos/TD-07, phase-03-videos/TD-13 |
 
 ## Decisions Detail
 
@@ -259,12 +264,14 @@ _No `scope_type: ad-hoc` doc declares phase 3 in `related_phases`; the ad-hoc se
 
 ## Inherited Conventions
 
-- Backend config uses `@nestjs/config` with namespaced `registerAs(name, () => ({...}))` factories — one file per domain in `src/config/`. _(from phase 01)_
-- Env variables are validated by a Joi schema in `src/config/env.validation.ts`, passed to `ConfigModule.forRoot({ validationSchema, validationOptions: { allowUnknown: true, abortEarly: false } })`. _(from phase 01)_
-- Config is injected into modules via `ConfigType<typeof xxxConfig>` and `@Inject(xxxConfig.KEY)`; the same factory is importable as a plain function for non-DI contexts (e.g., TypeORM CLI). _(from phase 01)_
-- `data-source.ts` loads `.env` via `import 'dotenv/config'` at the top, then imports `databaseConfig` and calls it as a plain function. _(from phase 01)_
-- Database connection parameters (host, port, etc.) are sourced from a single `databaseConfig` factory — never duplicated between `AppModule` and `data-source.ts`. _(from phase 01)_
-- `TypeOrmModule.forRootAsync` is used (not `forRoot`), with `imports: [ConfigModule]`, `inject: [databaseConfig.KEY]`, `useFactory` returning options including `autoLoadEntities: true`, `synchronize: false`. _(from phase 01)_
+- Backend config uses `@nestjs/config` with namespaced `registerAs(name, () => ({...}))` factories — one file per domain in `src/config/`. _(from phase 02)_
+- Env variables are validated by a Joi schema in `src/config/env.validation.ts`, passed to `ConfigModule.forRoot({ validationSchema, validationOptions: { allowUnknown: true, abortEarly: false } })`. _(from phase 02)_
+- Config is injected into modules via `ConfigType<typeof xxxConfig>` and `@Inject(xxxConfig.KEY)`; the same factory is importable as a plain function for non-DI contexts (e.g., TypeORM CLI). _(from phase 02)_
+- `data-source.ts` loads `.env` via `import 'dotenv/config'` at the top, then imports `databaseConfig` and calls it as a plain function. _(from phase 02)_
+- Database connection parameters (host, port, etc.) are sourced from a single `databaseConfig` factory — never duplicated between `AppModule` and `data-source.ts`. _(from phase 02)_
+- `TypeOrmModule.forRootAsync` is used (not `forRoot`), with `imports: [ConfigModule]`, `inject: [databaseConfig.KEY]`, `useFactory` returning options including `autoLoadEntities: true`, `synchronize: false`. _(from phase 02)_
+
+_Phase 01 contributes no inheritable conventions block of its own — its `## Inherited Conventions` is the first-phase placeholder. The bullets above are the union across both phase-02 slices after dedupe; all originate from `phase-02-auth` and are themselves attributed to phase 01 in that slice's context.md._
 
 ## Inherited Deferred Capabilities
 
@@ -272,10 +279,10 @@ _No `scope_type: ad-hoc` doc declares phase 3 in `related_phases`; the ad-hoc se
 |-----------|--------|--------------|-----------|
 | Telas de frontend | deferred | phase-01-configuracao-base | `next-frontend/` is not initialized in this phase; UI surfaces start in a later phase. |
 | Telas de cadastro, login, confirmação de conta e recuperação de senha | deferred | phase-02-auth | `next-frontend/` is not initialized in this phase; UI surfaces start in a later phase. |
-| "Confirmação de conta via e-mail com link de ativação" | deferred | phase-02-auth-frontend | deferred_to_next_phase — UI landing screen de-scoped 2026-05-14; FE confirmation flow (TD-07) picked up by a future phase. BE side unchanged in `phase-02-auth`. (TD refs: phase-02-auth-frontend/TD-07) |
-| "Logout" | deferred | phase-02-auth-frontend | deferred_to_next_phase — logout button lives inside authenticated chrome (typically Phase 04). Phase 02 still implements POST `/api/auth/logout` (BFF route handler + `session.destroy()`) so the contract is ready when the chrome lands. (TD refs: phase-02-auth-frontend/TD-01, phase-02-auth-frontend/TD-05) |
-| "Recuperação de senha (destination screen / set-new-password)" | deferred | phase-02-auth-frontend | deferred_to_next_phase — `/forgot-password` ships this phase sending the e-mail; the reset-password destination screen is absent from Figma → link destination remains a 404 until a later phase delivers the screen. Documented as a known gap. (TD refs: phase-02-auth-frontend/TD-07) |
-| "Telas de cadastro, login, confirmação de conta e recuperação de senha" | deferred | phase-02-auth-frontend | a tela de confirmação da conta não será implementada nesta fase corrente, será adiada — the umbrella bullet's full coverage requires the confirmação and reset-password destination screens; both are deferred per Non-UI rows above. (TD refs: phase-02-auth-frontend/TD-01, phase-02-auth-frontend/TD-04) |
+| "Confirmação de conta via e-mail com link de ativação" | deferred | phase-02-auth-frontend | deferred_to_next_phase — UI landing screen de-scoped 2026-05-14; FE confirmation flow (TD-07) picked up by a future phase. BE side unchanged in `phase-02-auth`. |
+| "Logout" | deferred | phase-02-auth-frontend | deferred_to_next_phase — logout button lives inside authenticated chrome (typically Phase 04). Phase 02 still implements POST `/api/auth/logout` (BFF route handler + `session.destroy()`) so the contract is ready when the chrome lands. |
+| "Recuperação de senha (destination screen / set-new-password)" | deferred | phase-02-auth-frontend | deferred_to_next_phase — `/forgot-password` ships this phase sending the e-mail; the reset-password destination screen is absent from Figma → link destination remains a 404 until a later phase delivers the screen via `/screen-inventory` extension run. Documented as a known gap. |
+| "Telas de cadastro, login, confirmação de conta e recuperação de senha" | deferred | phase-02-auth-frontend | a tela de confirmação da conta não será implementada nesta fase corrente, será adiada — the umbrella bullet's full coverage requires the confirmação and reset-password destination screens; both are deferred per Non-UI rows above. The 3 ship-this-phase telas (signup, login, forgot-password) are inventoried and covered by their own verbs; the umbrella bullet itself is deferred to the phase that lands the missing screens. |
 
 ## Non-UI / Deferred Capabilities
 
@@ -307,7 +314,7 @@ Refer to the `testing-guide-nestjs-project` Skill for layer requirements per art
 | Exception Filter | Unit + E2E |
 | Middleware | E2E |
 
-_Phase 03 introduces artifact types the guide's `references/external-systems.md` does not yet settle — a queue producer/consumer and an S3-compatible object store. `phase-03-videos/TD-01` and `phase-03-videos/TD-10` decide those strategies; the reference file is stale against both and is flagged for update._
+_Phase 03 introduces artifact types the guide's `references/external-systems.md` does not settle. For storage, `phase-03-videos/TD-10` decided a single S3 adapter tested against real MinIO, which contradicts the table row above (`local adapter`) and the reference file's § "Object Storage". For the queue, `phase-03-videos/TD-11` is still pending and the guide has no row for a producer or consumer artifact type at all; its § "Message Queue" is a Redis/`BullModule.forRoot` placeholder marked TBD, which `phase-03-videos/TD-01` already contradicts by choosing BullMQ on PostgreSQL with no `@nestjs/bullmq`. The guide's § 2 "Worth testing" list likewise cites `BullModule.registerQueue()` as the module-wiring example. All of these are flagged for update._
 
 ### next-frontend
 
