@@ -245,8 +245,8 @@ As linhas de E2E ficam de fora desta tabela de propósito: os cenários HTTP sã
 
 - `POST /videos` sem `Authorization` retorna `401`
 - `POST /videos` com body válido retorna `201` com `publicId`, `uploadId`, `partSize` e `partCount`
-- `POST /videos` com `size` acima do teto retorna `413` com `errorCode: "UPLOAD_SIZE_EXCEEDED"`
-- `POST /videos/:id/parts` num vídeo de outro usuário retorna `403` com `errorCode: "VIDEO_NOT_OWNED"`
+- `POST /videos` com `size` acima do teto retorna `413` com `error: "UPLOAD_SIZE_EXCEEDED"`
+- `POST /videos/:id/parts` num vídeo de outro usuário retorna `403` com `error: "VIDEO_NOT_OWNED"`
 - `DELETE /videos/:id` retorna `204` e o rascunho deixa de existir
 - As quatro rotas aparecem no `openapi.json` exportado
 

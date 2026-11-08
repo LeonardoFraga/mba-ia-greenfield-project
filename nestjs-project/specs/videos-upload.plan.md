@@ -22,7 +22,7 @@ As quatro rotas autenticadas que orquestram o upload multipart de um vídeo de a
 
 **Covers AC:** #1
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. POST /videos sem header `Authorization`, com body válido
@@ -33,7 +33,7 @@ As quatro rotas autenticadas que orquestram o upload multipart de um vídeo de a
 
 **Covers AC:** #2
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. POST /videos com `Authorization: Bearer <token>` e body `{ title, size: 104857600, contentType: 'video/mp4' }`
@@ -47,12 +47,12 @@ As quatro rotas autenticadas que orquestram o upload multipart de um vídeo de a
 
 **Covers AC:** #3
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. POST /videos com `size: 10737418241` (um byte acima de 10GB)
     - expect: status `413`
-    - expect: body com `errorCode: "UPLOAD_SIZE_EXCEEDED"`
+    - expect: body com `error: "UPLOAD_SIZE_EXCEEDED"`
     - expect: nenhuma linha criada em `videos` — a rejeição acontece antes do pré-cadastro
     - expect: nenhum multipart aberto no bucket de vídeos
 
@@ -60,12 +60,12 @@ As quatro rotas autenticadas que orquestram o upload multipart de um vídeo de a
 
 **Covers AC:** #3
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. POST /videos com `contentType: 'application/zip'`
     - expect: status `415`
-    - expect: body com `errorCode: "UNSUPPORTED_MEDIA_TYPE"`
+    - expect: body com `error: "UNSUPPORTED_MEDIA_TYPE"`
     - expect: nenhuma linha criada em `videos`
 
 ---
@@ -78,7 +78,7 @@ As quatro rotas autenticadas que orquestram o upload multipart de um vídeo de a
 
 **Covers AC:** #2
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. POST /videos/:id/parts com body `{ partNumbers: [1, 2] }` e o token do dono
@@ -90,19 +90,19 @@ As quatro rotas autenticadas que orquestram o upload multipart de um vídeo de a
 
 **Covers AC:** #4
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. POST /videos/:id/parts no rascunho do primeiro usuário usando o token do segundo
     - expect: status `403`
-    - expect: body com `errorCode: "VIDEO_NOT_OWNED"`
+    - expect: body com `error: "VIDEO_NOT_OWNED"`
     - expect: nenhuma URL devolvida no corpo
 
 #### 2.3. rejects-part-numbers-out-of-range
 
 **Covers AC:** #2
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. POST /videos/:id/parts com `{ partNumbers: [0] }`
@@ -122,7 +122,7 @@ As quatro rotas autenticadas que orquestram o upload multipart de um vídeo de a
 
 **Covers AC:** #2
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. POST /videos/:id/complete com `{ parts: [{ partNumber: 1, etag }, { partNumber: 2, etag }] }`
@@ -135,13 +135,13 @@ As quatro rotas autenticadas que orquestram o upload multipart de um vídeo de a
 
 **Covers AC:** #2
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. Criar um rascunho declarando `size` maior do que os bytes efetivamente enviados nas partes
   2. POST /videos/:id/complete com as ETags reais
     - expect: status `409`
-    - expect: body com `errorCode: "UPLOAD_SIZE_MISMATCH"`
+    - expect: body com `error: "UPLOAD_SIZE_MISMATCH"`
     - expect: a linha termina com `status = 'failed'` e `processing_error` não vazio
     - expect: nenhum job enfileirado
     - expect: o multipart deixa de constar como pendente no bucket
@@ -150,13 +150,13 @@ As quatro rotas autenticadas que orquestram o upload multipart de um vídeo de a
 
 **Covers AC:** #2
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. Completar um upload com sucesso, levando a linha a `processing`
   2. POST /videos/:id/complete novamente no mesmo vídeo
     - expect: status `409`
-    - expect: body com `errorCode: "UPLOAD_NOT_IN_PROGRESS"`
+    - expect: body com `error: "UPLOAD_NOT_IN_PROGRESS"`
 
 ---
 
@@ -168,7 +168,7 @@ As quatro rotas autenticadas que orquestram o upload multipart de um vídeo de a
 
 **Covers AC:** #5
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. DELETE /videos/:id no rascunho em `uploading`, com o token do dono
@@ -176,17 +176,17 @@ As quatro rotas autenticadas que orquestram o upload multipart de um vídeo de a
     - expect: a linha deixa de existir em `videos`
     - expect: o multipart deixa de constar como pendente no bucket
   2. DELETE /videos/:id no mesmo id novamente
-    - expect: status `404` com `errorCode: "VIDEO_NOT_FOUND"`
+    - expect: status `404` com `error: "VIDEO_NOT_FOUND"`
 
 #### 4.2. denies-abort-by-non-owner
 
 **Covers AC:** #4, #5
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. DELETE /videos/:id no rascunho do primeiro usuário usando o token do segundo
-    - expect: status `403` com `errorCode: "VIDEO_NOT_OWNED"`
+    - expect: status `403` com `error: "VIDEO_NOT_OWNED"`
     - expect: a linha continua existindo
 
 ---

@@ -22,7 +22,7 @@ As três rotas públicas que entregam um vídeo pronto. `GET /videos/:publicId` 
 
 **Covers AC:** #1
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. GET /videos/:publicId de um vídeo `ready`, sem header `Authorization`
@@ -34,26 +34,26 @@ As três rotas públicas que entregam um vídeo pronto. `GET /videos/:publicId` 
 
 **Covers AC:** #2
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. GET /videos/:publicId de um vídeo `draft`
-    - expect: status `404` com `errorCode: "VIDEO_NOT_FOUND"`
+    - expect: status `404` com `error: "VIDEO_NOT_FOUND"`
   2. GET /videos/:publicId de um vídeo `uploading`
-    - expect: status `404` com `errorCode: "VIDEO_NOT_FOUND"`
+    - expect: status `404` com `error: "VIDEO_NOT_FOUND"`
   3. GET /videos/:publicId de um vídeo `processing`
-    - expect: status `404` com `errorCode: "VIDEO_NOT_FOUND"`
+    - expect: status `404` com `error: "VIDEO_NOT_FOUND"`
   4. GET /videos/:publicId de um vídeo `failed`
-    - expect: status `404` com `errorCode: "VIDEO_NOT_FOUND"`
+    - expect: status `404` com `error: "VIDEO_NOT_FOUND"`
   5. GET /videos/:publicId de um `publicId` que nunca existiu
-    - expect: status `404` com `errorCode: "VIDEO_NOT_FOUND"`
+    - expect: status `404` com `error: "VIDEO_NOT_FOUND"`
     - expect: corpo byte-idêntico ao dos quatro casos anteriores — a existência de um rascunho não vaza
 
 #### 1.3. stays-public-for-authenticated-callers
 
 **Covers AC:** #1
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. GET /videos/:publicId de um vídeo `ready` com `Authorization: Bearer <token>` de um usuário que não é o dono
@@ -69,7 +69,7 @@ As três rotas públicas que entregam um vídeo pronto. `GET /videos/:publicId` 
 
 **Covers AC:** #1, #5
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. GET /videos/:publicId/stream de um vídeo `ready`, sem header `Authorization`
@@ -82,7 +82,7 @@ As três rotas públicas que entregam um vídeo pronto. `GET /videos/:publicId` 
 
 **Covers AC:** #3
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. GET /videos/:publicId/stream e capturar `url`
@@ -97,11 +97,11 @@ As três rotas públicas que entregam um vídeo pronto. `GET /videos/:publicId` 
 
 **Covers AC:** #2
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. GET /videos/:publicId/stream de um vídeo `processing`
-    - expect: status `404` com `errorCode: "VIDEO_NOT_FOUND"`
+    - expect: status `404` com `error: "VIDEO_NOT_FOUND"`
     - expect: nenhuma `url` no corpo — nada é assinado para vídeo que não está pronto
 
 ---
@@ -114,7 +114,7 @@ As três rotas públicas que entregam um vídeo pronto. `GET /videos/:publicId` 
 
 **Covers AC:** #4
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. GET /videos/:publicId/download de um vídeo `ready`, sem header `Authorization`
@@ -125,7 +125,7 @@ As três rotas públicas que entregam um vídeo pronto. `GET /videos/:publicId` 
 
 **Covers AC:** #4
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. GET /videos/:publicId/download e capturar `url`
@@ -138,9 +138,9 @@ As três rotas públicas que entregam um vídeo pronto. `GET /videos/:publicId` 
 
 **Covers AC:** #2
 **Source:** auto
-**Last sync:** 2026-11-08T22:50:14Z
+**Last sync:** 2026-11-08T23:30:39Z
 
 **Steps:**
   1. GET /videos/:publicId/download de um vídeo `failed`
-    - expect: status `404` com `errorCode: "VIDEO_NOT_FOUND"`
+    - expect: status `404` com `error: "VIDEO_NOT_FOUND"`
     - expect: nenhuma `url` no corpo

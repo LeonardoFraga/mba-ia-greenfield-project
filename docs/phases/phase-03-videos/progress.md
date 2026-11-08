@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 5/12 completed
+**SIs:** 6/12 completed
 
 ### SI-03.1 — Provisionar object storage e broker no Compose
 - **Status:** completed
@@ -55,9 +55,17 @@
   - Payload do job deliberadamente mínimo (`videoId` + `storageKey`): o worker relê a linha, então não carrega snapshot que pode envelhecer entre enfileirar e executar.
 
 ### SI-03.6 — Implementar o handshake de upload no VideosService
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 31 passing no SI (21 unit com mocks nos limites + 10 de integração contra DB e MinIO reais); suíte completa 228 passing / 33 suites, e2e 52 passing / 3 suites, `tsc --noEmit` exit 0, lint exit 0
+- **Observations:**
+  - **Erro de contrato corrigido nos meus próprios artefatos.** O `DomainExceptionFilter` serializa `{ statusCode, error, message }` — o campo é `error`, não `errorCode`. Meus dois specs de teste e duas ACs do plano asseravam `errorCode: "..."` no corpo. Corrigido nos três arquivos (o cabeçalho da tabela do Error Catalog continua `errorCode`, que é o nome da coluna do catálogo e está certo) e os specs re-estampados.
+  - **Teto e allowlist ficam no service, não no DTO.** O Error Catalog pede `413 UPLOAD_SIZE_EXCEEDED` e `415 UNSUPPORTED_MEDIA_TYPE`; um `@Max()` no DTO daria `400`. Como efeito colateral bom, o teto continua sendo valor de config em vez de literal num decorator.
+  - **JSDoc dos DTOs encurtado de propósito:** com `introspectComments: true` o JSDoc vira a `description` do OpenAPI, então a justificativa sobre status HTTP foi para comentário comum, fora da doc pública.
+  - **`isPgUniqueViolationOnColumn` extraído para `src/common/database/pg-error.util.ts`** e o `channels.service.ts` passou a importá-lo. O helper introspecciona interno de driver (`driverError.code`/`.detail`); duas cópias divergiriam na primeira mudança de formato de mensagem.
+  - **`findByUserId` entrou no `ChannelsService`** em vez de o `VideosService` consultar a tabela `channels`. O `CLAUDE.md` é explícito: módulo não deve ser dono de entidade alheia.
+  - **Retry do `public_id` fora de transação, de propósito.** O `typeorm-queries.md` avisa que violação de unique dentro de transação a aborta e exige SAVEPOINT; como cada tentativa aqui é um insert avulso, o problema não existe. Divergência consciente do padrão do `channels.service`, que faz o retry dentro de transação.
+  - **Compensação no handshake:** se o `CreateMultipartUpload` falha, o rascunho é apagado, para não deixar órfão que o reaper depois teria de interpretar.
+  - **Dois tropeços meus nesta rodada:** o `videos.module.spec.ts` da rodada anterior quebrou ao o módulo ganhar imports de Config/Storage/Queue (reescrito com `ConfigModule` global, como a regra de testes manda para `forRootAsync`), e eu relatei "lint em 0" com o exit code mascarado por um `| tail` — o lint tinha 2 erros de `no-unsafe-member-access` em `mock.calls`. Passei a capturar o código antes de pipar.
 
 ### SI-03.7 — Implementar a finalização do upload com verificação e enfileiramento
 - **Status:** pending
