@@ -3,7 +3,7 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-09-20T12:27:44-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T19:31:28-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T20:02:26-03:00"
   docs/decisions/technical-decisions-openapi-docs-nestjs.md: "2026-09-20T12:27:44-03:00"
   docs/phases/phase-01-configuracao-base/context.md: "2026-09-20T12:27:44-03:00"
   docs/phases/phase-02-auth/context.md: "2026-09-20T12:27:44-03:00"
@@ -53,6 +53,7 @@ sources_mtime:
 | phase-03-videos/TD-02 | phase | Cross-layer | Large File Upload Protocol (up to 10GB) | decided | A (S3 multipart with presigned part URLs) | — |
 |     └─ Last revision: 2026-11-08 — Strict-BFF exception recorded: the inherited strict-BFF model (`next-frontend-c… | | | | | | |
 | phase-03-videos/TD-03 | phase | Backend | Object Storage Bucket and Key Layout | decided | B (Separate buckets by access policy) | — |
+|     └─ Last revision: 2026-11-08 — The `AbortIncompleteMultipartUpload` lifecycle rule on the videos b… | | | | | | |
 | phase-03-videos/TD-04 | phase | Backend | Video Worker Process Model | decided | A (Separate container, same codebase, standalone Nest app) | — |
 | phase-03-videos/TD-05 | phase | Backend | FFmpeg Distribution and Invocation | decided | A (Distro binaries + `spawn`) | — |
 |     └─ Last revision: 2026-11-08 — Persisted metadata set fixed as a hybrid: discrete columns for what is queried… | | | | | | |
@@ -105,6 +106,19 @@ _The `Renders in` column is omitted: no TD in the kept set declares a `**Renders
 
 **Recommendation:** the two artifact classes have genuinely different access profiles, and expressing that as bucket policy is safer and cheaper than signing every thumbnail. The decisive factor is downstream: Fases 04 and 07 render grids of many thumbnails at once, and public cacheable thumbnail URLs there are the difference between one request and N signing round-trips. The cost — a second bucket in bootstrap — is a few lines in the Compose init step. Either way, the videos bucket carries an `AbortIncompleteMultipartUpload` lifecycle rule so the abandoned uploads that TD-02 Option A can leave behind do not accumulate as invisible storage.
 **Libraries:** —
+
+**Revisions:**
+- 2026-11-08 — The `AbortIncompleteMultipartUpload` lifecycle rule on the videos bucket is scoped to
+  **production S3 only** and is not applied by the local Compose bootstrap. Verified three ways against
+  the MinIO build this phase runs (`DEVELOPMENT.2025-05-24`): the S3 API rejects a rule whose only action
+  is the abort, with `InvalidArgument` — "XML ... did not validate against our published schema"; pairing
+  it with an expiration action is accepted but MinIO **silently drops** the abort element, so the read-back
+  returns only `ExpiredObjectDeleteMarker`; and `mc ilm rule add --help` exposes no multipart or incomplete
+  flag at all. Locally, abandoned uploads are reclaimed by the application-side reaper (SI-03.12), which
+  aborts the multipart through the SDK for every row left in `uploading` past the cutoff. Rationale: param
+  tightened by new policy — the chosen option (separate buckets by access policy) is unchanged; only the
+  enforcement locus of the cleanup half moves, because the local storage implementation does not support a
+  mechanism the decision assumed was universally available.
 
 ### phase-03-videos/TD-04
 

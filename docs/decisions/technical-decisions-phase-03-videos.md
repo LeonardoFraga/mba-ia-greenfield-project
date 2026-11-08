@@ -117,6 +117,19 @@ _Subprojects in scope:_
 
 **Decision:** B (Separate buckets by access policy)
 
+**Revisions:**
+- 2026-11-08 — The `AbortIncompleteMultipartUpload` lifecycle rule on the videos bucket is scoped to
+  **production S3 only** and is not applied by the local Compose bootstrap. Verified three ways against
+  the MinIO build this phase runs (`DEVELOPMENT.2025-05-24`): the S3 API rejects a rule whose only action
+  is the abort, with `InvalidArgument` — "XML ... did not validate against our published schema"; pairing
+  it with an expiration action is accepted but MinIO **silently drops** the abort element, so the read-back
+  returns only `ExpiredObjectDeleteMarker`; and `mc ilm rule add --help` exposes no multipart or incomplete
+  flag at all. Locally, abandoned uploads are reclaimed by the application-side reaper (SI-03.12), which
+  aborts the multipart through the SDK for every row left in `uploading` past the cutoff. Rationale: param
+  tightened by new policy — the chosen option (separate buckets by access policy) is unchanged; only the
+  enforcement locus of the cleanup half moves, because the local storage implementation does not support a
+  mechanism the decision assumed was universally available.
+
 ---
 
 ## TD-04: Video Worker Process Model

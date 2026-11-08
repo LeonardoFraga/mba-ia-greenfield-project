@@ -4,8 +4,8 @@ name: phase-03-videos
 status: clean
 issue_count: 0
 sources_mtime:
-  docs/phases/phase-03-videos/context.md: "2026-11-08T19:35:53-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T19:31:28-03:00"
+  docs/phases/phase-03-videos/context.md: "2026-11-08T20:02:50-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T20:02:26-03:00"
 issues:
   - id: IC-1
     status: resolved
@@ -106,6 +106,10 @@ _None._
 - **AMB-2** _(resolved_by phase-03-videos/TD-05)_ — Thumbnail parameters fixed: one frame seeked at 10% of the `ffprobe` duration, scaled to 1280x720 preserving aspect ratio, JPEG at fixed quality. A percentage never falls outside the file, unlike a fixed timestamp. Recorded as a `**Revisions:**` entry on TD-05.
 - **ICC-1** _(resolved_by phase-03-videos/TD-02, phase-03-videos/TD-07)_ — Resolved by recording a deliberately narrow exception on both cross-layer TDs: the inherited strict-BFF model governs calls to the NestJS API, and presigned storage URLs minted server-side fall outside its scope. Recorded on both TDs rather than one because the two contracts are inherited independently by different frontend phases.
 - **OQ-4** _(resolved_by phase-03-videos/TD-14)_ — TD-14 decided: Option A — a dedicated `redis` Compose service with `Queue` and `Worker` as hand-written providers, `ioredis` installed as BullMQ's optional peer, and `appendonly yes` for job durability. Option B (`@nestjs/bullmq@12`) was rejected because the package is `type: module` with its `require` export condition pointing at the ESM build, the same edge `TD-02` and `TD-08` declined in this CJS project. Option C (keep the PostgreSQL backend and document it) is the better choice on engineering merit and is recorded as such in the TD, but it leaves the acceptance criterion resting on the reader. The resolution carried three further edits: the supersede marker on `TD-01`, two `**Revisions:**` entries on `TD-11` (connection target, no `runMigrations()`, plus the re-anchored testing-guide override) with its chosen strategy intact, and the rewritten queue row in `context.md`'s `## Testing Requirements` override table.
+
+## Revisions absorbed after this verdict
+
+- **2026-11-08 — `phase-03-videos/TD-03`** gained a `**Revisions:**` entry scoping the `AbortIncompleteMultipartUpload` lifecycle rule to production S3, after the local MinIO build was verified not to implement it. The `sources_mtime` above was refreshed to match. This opens **no new issue**: the chosen option is unchanged, no capability loses coverage, and the cleanup mechanism moves to `SI-03.12`'s reaper, which the plan already contained. The `clean` verdict therefore still holds — but note that the authority for that verdict is `/plan-validate`, and this entry records a refresh applied during `/implement`, not a fresh run of the checks. Re-run `/plan-validate 03` if an independent reconfirmation is wanted.
 
 ## Deferred follow-up (not an open issue)
 
