@@ -3,7 +3,7 @@ kind: phase
 name: phase-03-videos
 sources_mtime:
   docs/project-plan.md: "2026-09-20T12:27:44-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T19:26:14-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T19:31:28-03:00"
   docs/decisions/technical-decisions-openapi-docs-nestjs.md: "2026-09-20T12:27:44-03:00"
   docs/phases/phase-01-configuracao-base/context.md: "2026-09-20T12:27:44-03:00"
   docs/phases/phase-02-auth/context.md: "2026-09-20T12:27:44-03:00"
@@ -48,7 +48,7 @@ sources_mtime:
 
 | Ref | Source | Scope | Topic | Status | Decision | Libraries |
 |-----|--------|-------|-------|--------|----------|-----------|
-| phase-03-videos/TD-01 | phase | Backend | Message Queue Technology | decided | B (BullMQ 6 + PostgreSQL backend) | — |
+| phase-03-videos/TD-01 | phase | Backend | Message Queue Technology | superseded-by phase-03-videos/TD-14 | — | — |
 |     └─ Last revision: 2026-11-08 — Testing-guide override recorded: `testing-guide-nestjs-project/references/exter… | | | | | | |
 | phase-03-videos/TD-02 | phase | Cross-layer | Large File Upload Protocol (up to 10GB) | decided | A (S3 multipart with presigned part URLs) | — |
 |     └─ Last revision: 2026-11-08 — Strict-BFF exception recorded: the inherited strict-BFF model (`next-frontend-c… | | | | | | |
@@ -63,10 +63,11 @@ sources_mtime:
 | phase-03-videos/TD-09 | phase | Backend | Video Status Lifecycle and Processing Failure Policy | decided | A (Single technical `status` enum) | — |
 | phase-03-videos/TD-10 | phase | Backend | Object Storage Abstraction and Test Strategy | decided | A (Single S3 adapter, real MinIO in tests) | — |
 |     └─ Last revision: 2026-11-08 — Testing-guide override recorded: `references/external-systems.md` § "Object Sto… | | | | | | |
-| phase-03-videos/TD-11 | phase | Backend | Queue Producer and Consumer Test Strategy | decided | A (Real `Worker` in-process via `QueueEvents`) | bullmq |
+| phase-03-videos/TD-11 | phase | Backend | Queue Producer and Consumer Test Strategy | decided | A (Real `Worker` in-process via `QueueEvents`) | bullmq, ioredis |
+|     └─ Last revision: 2026-11-08 — Testing-guide override for the queue re-anchored here and on TD-14, since TD-01… | | | | | | |
 | phase-03-videos/TD-12 | phase | Cross-layer | Upload Size and Content-Type Enforcement Point | decided | A (Declare at initiate, verify with `HeadObject` at complete) | @aws-sdk/client-s3, @aws-sdk/s3-request-presigner |
 | phase-03-videos/TD-13 | phase | Cross-layer | Authorization Policy for Streaming and Download | decided | A (Public for `ready`, state-gated) | — |
-| phase-03-videos/TD-14 | phase | Backend | Queue Broker Deployment Shape — supersedes phase-03-videos/TD-01 | pending | — | — |
+| phase-03-videos/TD-14 | phase | Backend | Queue Broker Deployment Shape — supersedes phase-03-videos/TD-01 | decided | A (Redis service + hand-written `Queue`/`Worker` providers) | bullmq, ioredis |
 
 _Source files:_
 
@@ -81,7 +82,7 @@ _The `Renders in` column is omitted: no TD in the kept set declares a `**Renders
 | Capability (from project-plan.md) | Covered by |
 |-----------------------------------|------------|
 | Serviço de armazenamento de arquivos (vídeos e thumbnails) | phase-03-videos/TD-03, phase-03-videos/TD-10 |
-| Serviço de processamento em segundo plano (filas) | phase-03-videos/TD-01, phase-03-videos/TD-04, phase-03-videos/TD-11, phase-03-videos/TD-14 |
+| Serviço de processamento em segundo plano (filas) | phase-03-videos/TD-04, phase-03-videos/TD-11, phase-03-videos/TD-14 _(TD-01 superseded by TD-14)_ |
 | Upload de vídeos com suporte a arquivos de até 10GB sem impacto na performance | phase-03-videos/TD-02, phase-03-videos/TD-12 |
 | Pré-cadastro automático do vídeo como rascunho ao iniciar o upload | phase-03-videos/TD-02, phase-03-videos/TD-09 |
 | Processamento automático do vídeo após upload (extração de duração e metadados) | phase-03-videos/TD-04, phase-03-videos/TD-05, phase-03-videos/TD-06, phase-03-videos/TD-09 |
@@ -91,14 +92,6 @@ _The `Renders in` column is omitted: no TD in the kept set declares a `**Renders
 | Download do vídeo pelo usuário | phase-03-videos/TD-07, phase-03-videos/TD-13 |
 
 ## Decisions Detail
-
-### phase-03-videos/TD-01
-
-**Recommendation:** the queue carries a handful of jobs per minute, so Redis's throughput advantage buys nothing, while the fourth container costs a service, a config namespace and a healthcheck in every environment. BullMQ's PG backend is not a downgrade path: it is the same API with documented feature parity, and it is durable without tuning. The real price is the missing `@nestjs/bullmq` integration — `Queue` and `Worker` become explicit providers in a `QueueModule`, which is perhaps thirty lines and arguably clearer than decorator magic for a two-queue system. If that wiring turns out to fight the framework during implementation, Option A is the fallback and the job-handling code is unchanged, since both options are the same BullMQ API.
-**Libraries:** —
-
-**Revisions:**
-- 2026-11-08 — Testing-guide override recorded: `testing-guide-nestjs-project/references/external-systems.md` § "Message Queue" still prescribes Redis with `BullModule.forRoot`, and the guide's § 2 cites `BullModule.registerQueue()` as the module-wiring example; neither applies to this decision. The phase artifacts are authoritative — no `BullModule`, no Redis service, `Queue` and `Worker` as hand-written providers against the PostgreSQL backend. Rationale: path moved to follow ownership convention — `.claude/skills/` is provided foundation outside this phase's deliverable, so correcting the guide is tracked as a separate task per `CLAUDE.md` § Scope Limits.
 
 ### phase-03-videos/TD-02
 
@@ -161,7 +154,13 @@ _The `Renders in` column is omitted: no TD in the kept set declares a `**Renders
 ### phase-03-videos/TD-11
 
 **Recommendation:** the phase is graded on the worker actually producing duration, metadata and a thumbnail, and TD-10 already established that the mechanisms most likely to break are the ones that must run for real. Option A costs no new infrastructure here precisely because TD-01 chose the PostgreSQL backend. Option B alone is rejected not for speed but for coverage: it cannot observe the retry-to-`failed` transition TD-09 specifies, and it leaves TD-01's acknowledged wiring cost unexercised. Keeping direct invocation for pure branch logic follows the guide's existing "Service with branching + DB → Unit + Integration" rule rather than replacing it. The consequence is the documentation change TD-10 anticipated: § "Message Queue" must be rewritten from the Redis/`BullModule` placeholder to the PostgreSQL backend with `runMigrations()` in setup and `obliterate()` for isolation, plus a queue producer/consumer row in the guide's artifact table.
-**Libraries:** bullmq
+**Libraries:** bullmq, ioredis
+
+**Revisions:**
+- 2026-11-08 — Backend mechanics updated for TD-14: the connection target is the `redis` Compose service rather than the `db` service, and setup no longer calls `runMigrations()` — that step exists only for BullMQ's PostgreSQL backend, which TD-14 supersedes. `ioredis` joins the Libraries line as BullMQ's optional peer for the Redis driver. Unchanged: the chosen strategy itself (real `Worker` in-process awaiting `completed`/`failed` on `QueueEvents`, `obliterate()` for per-spec isolation, `worker.close()` in `afterEach`, direct processor invocation kept for branch-level units) — every one of those is backend-independent. Rationale: param updated to match new lib version — the superseding TD changed the broker, not the test strategy.
+- 2026-11-08 — Testing-guide override for the queue re-anchored here and on TD-14, since TD-01 is now superseded and drops out of active enumeration. The guide's § "Message Queue" (Redis + `BullModule.forRoot`) and its § 2 `BullModule.registerQueue()` example remain inapplicable: TD-14 keeps `Queue` and `Worker` as hand-written providers with no `BullModule`, so the only part of the guide's placeholder that TD-14 happens to vindicate is Redis as the broker. Rationale: path moved to follow ownership convention — correcting the guide stays a separate task per `CLAUDE.md` § Scope Limits.
+
+> The Recommendation prose above predates TD-14 and still argues from the PostgreSQL backend ("Option A costs no new infrastructure here precisely because TD-01 chose the PostgreSQL backend", and the § "Message Queue" rewrite target). Per the decisions history model the Recommendation is append-only history; the two Revisions entries are what currently applies.
 
 ### phase-03-videos/TD-12
 
@@ -172,6 +171,11 @@ _The `Renders in` column is omitted: no TD in the kept set declares a `**Renders
 
 **Recommendation:** the product rule is explicit that watching is anonymous, the phase is graded on streaming and download working, and the mechanism already exists in `@Public()`. The decisive point is what actually guards the sensitive cases: the `status = ready` condition, not the caller's identity, and that condition is equally effective against anonymous and authenticated strangers. Option B's safety is real, but it buys protection for a concept — unpublished-but-ready — that TD-09 deliberately declined to model in this phase, and it would make the phase's own deliverable undemonstrable without credentials. The cost worth recording is directional: Fase 04 will tighten this route when it introduces visibility, so the authorization decision should live in one place in the signing path rather than being inlined at each call site. Download follows the identical rule, since TD-07 already made it the same mechanism with a content-disposition override.
 **Libraries:** —
+
+### phase-03-videos/TD-14
+
+**Recommendation:** the criterion asks for a queue running in Compose, and the only option that makes that true by inspection rather than by explanation is a broker service of its own. Between the two Redis shapes, Option A is strictly cheaper here: the hand-written `QueueModule` is already what the plan assumed under TD-01, so nothing in the job code or the module layout changes, while Option B would reintroduce the ESM-only dependency this build has twice avoided to buy decorator sugar the project does not need — and the stale testing-guide snippets it would fix are already owned by the separate guide-correction task. Option C remains the better decision on engineering merit alone and is recorded here as such; it loses on a non-engineering criterion that is nonetheless the one the phase is graded against. The durability gap is the real cost to accept: pin `appendonly yes` on the Redis service so an enqueued job survives a broker restart, which is the property TD-01 got for free from PostgreSQL.
+**Libraries:** bullmq, ioredis
 
 ## Inherited Decisions Detail
 
@@ -356,9 +360,9 @@ Refer to the `testing-guide-nestjs-project` Skill for layer requirements per art
 | Artifact class | Guide says | This phase does | Recorded on |
 |----------------|-----------|-----------------|-------------|
 | Storage service (side-effect dep) | `local adapter` / filesystem driver, § "Object Storage" | Single S3 adapter exercised against the **real MinIO container**; a filesystem driver cannot express presigned multipart or range delivery | `phase-03-videos/TD-10` |
-| Queue producer / consumer (no row in the table) | § "Message Queue" is a TBD placeholder assuming Redis + `BullModule.forRoot`; § 2 cites `BullModule.registerQueue()` | BullMQ 6 with no `BullModule`; real `Worker` driven by `QueueEvents`, `obliterate()` for isolation, direct processor invocation kept for branch-level units. **The broker and its setup step are in flux — see the note below.** | `phase-03-videos/TD-01`, `phase-03-videos/TD-11`, `phase-03-videos/TD-14` |
+| Queue producer / consumer (no row in the table) | § "Message Queue" is a TBD placeholder whose setup example is `BullModule.forRoot` + `getQueueToken`; § 2 cites `BullModule.registerQueue()` | BullMQ 6 against the `redis` Compose service, with `Queue` and `Worker` as hand-written providers — **no `BullModule`**, no `runMigrations()` (that step is PostgreSQL-backend-only). Tests start a real `Worker` and await `completed`/`failed` on `QueueEvents`, isolate per spec with `obliterate()`, and close the `Worker` in `afterEach`; direct processor invocation is kept for branch-level units | `phase-03-videos/TD-11`, `phase-03-videos/TD-14` |
 
-> **Pending — queue broker shape.** `phase-03-videos/TD-14` is open and supersedes `TD-01`'s choice of the PostgreSQL backend; its recommendation is a dedicated Redis service with hand-written `Queue`/`Worker` providers, driven by the acceptance criterion that the queue must be visible as a Compose service. Until it is decided, two details of the row above are unsettled: the connection target (PostgreSQL's `db` service vs. a `redis` service) and whether setup calls `runMigrations()` (a PostgreSQL-backend-only step). Everything else — the BullMQ API, the retry/backoff semantics `TD-09` depends on, and `TD-11`'s chosen test strategy — is backend-independent and unaffected. `TD-11` will need a `**Revisions:**` entry once `TD-14` lands.
+> **Note on the queue row.** `phase-03-videos/TD-14` superseded `TD-01`, so the broker is now a dedicated Redis service rather than the PostgreSQL backend — which means the guide's placeholder happens to be right about Redis and still wrong about everything else it prescribes (`BullModule.forRoot`, `BullModule.registerQueue()`, `getQueueToken`). The override above is anchored on `TD-11` and `TD-14`; `TD-01` is superseded and drops out of active enumeration, so it is no longer cited here. Durability is a configuration item, not a default: the Redis service carries `appendonly yes` so an enqueued job survives a broker restart.
 
 ### next-frontend
 
