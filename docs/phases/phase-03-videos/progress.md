@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 3/12 completed
+**SIs:** 4/12 completed
 
 ### SI-03.1 — Provisionar object storage e broker no Compose
 - **Status:** completed
@@ -35,9 +35,14 @@
   - **Fora de escopo, observado:** `create-test-data-source.ts` lê `process.env.DB_DATABASE`, mas o `.env` define `DB_NAME` — funciona só porque o fallback `'streamtube'` coincide com o nome real do banco. Herdado da Fase 01.
 
 ### SI-03.4 — Implementar o adapter de object storage
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 11 passing em `src/storage/` (10 de integração contra o MinIO real + 1 compilation test); suíte completa 190 passing / 29 suites, e2e 52 passing / 3 suites, `tsc --noEmit` exit 0, lint exit 0
+- **Observations:**
+  - **Os dois mecanismos centrais da fase estão verificados de verdade, não contra mock:** multipart de duas partes enviadas por URL pré-assinada completando com o tamanho somado; `Range: bytes=0-99` na URL pré-assinada respondendo `206` com `Content-Range: bytes 0-99/4096` e exatamente 100 bytes no corpo; `abortMultipartUpload` deixando o upload inexistente (o `ListParts` subsequente falha); e o override de content-disposition no download.
+  - **Dois métodos além da lista do plano.** `countUploadedParts` porque a AC do abort exige *observar* que as partes sumiram, e `deleteObject` porque a regra de testes manda limpar o dado criado — sem ele os objetos de teste acumulariam no MinIO de desenvolvimento. Nenhum dos dois é especulativo: cada um existe porque um teste precisa dele.
+  - **Partes de 5MB no teste por limite de plataforma**, não por escolha: o S3 rejeita parte não-final abaixo de 5MB, então o caso de duas partes é 5MB + 1KB.
+  - **`fetch` não aceita `Buffer` nos tipos.** Node aceita em runtime, mas o `BodyInit` do DOM não inclui `Buffer`; o teste usa `new Uint8Array(body)`, que é o equivalente type-correto. Peguei isso com o `tsc` — e só depois de ter relatado "tsc limpo" por engano, porque meu `echo` de confirmação rodava incondicionalmente depois do pipe. Relato corrigido na hora.
+  - **`npm audit` é ruído herdado:** 39 vulnerabilidades (2 low, 13 moderate, 21 high, 3 critical), e **nenhuma** menciona `aws-sdk` — os caminhos apontam para o stack NestJS e para `preview-email`/`uuid` sob o `@nestjs-modules/mailer` da Fase 02. Fora do escopo desta fase; `npm audit fix --force` traz breaking changes.
 
 ### SI-03.5 — Montar o QueueModule e o contrato do job
 - **Status:** pending
