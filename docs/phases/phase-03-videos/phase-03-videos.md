@@ -36,7 +36,7 @@ Entregar upload de vídeos de até 10GB sem passar os bytes pela API, processame
 
 **Acceptance criteria:**
 
-- `docker compose ps` mostra `nestjs-api`, `db`, `mailpit`, `minio`, `redis` e `video-worker` com status `running`
+- `docker compose ps` mostra `nestjs-api`, `db`, `mailpit`, `minio` e `redis` com status `running` — o `video-worker` entra no SI-03.10
 - `docker compose exec redis redis-cli ping` responde `PONG`
 - Os buckets `videos` e `thumbnails` existem após o `minio-init` completar
 - O bucket `videos` tem a lifecycle rule `AbortIncompleteMultipartUpload` configurada
