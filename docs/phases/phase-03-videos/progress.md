@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 1/12 completed
+**SIs:** 2/12 completed
 
 ### SI-03.1 — Provisionar object storage e broker no Compose
 - **Status:** completed
@@ -14,9 +14,14 @@
   - **Fora de escopo, observado:** `.env.example` tem `MAIL_FROM="StreamTube" <noreply@streamtube.com>` com os angle brackets fora das aspas, exatamente o problema de parsing que `nestjs-project/CLAUDE.md` § Environment File Conventions documenta. Não corrigido por ser de outra fase.
 
 ### SI-03.2 — Configurar storage e fila no ConfigModule
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 31 passing no diretório de config (4 suites); suíte completa 168 passing / 25 suites, `tsc --noEmit` exit 0, lint exit 0
+- **Observations:**
+  - **Desvio do plano (arquivo de teste):** o plano previa `src/config/env.validation.spec.ts`, mas o projeto já tem `src/config/env.validation.integration-spec.ts` como casa dos testes do schema. Estendi o arquivo existente em vez de criar um paralelo. De passagem: esse arquivo testa só Joi puro, sem I/O, então pelo critério do `CLAUDE.md` § Test Type Selection ele deveria ser `*.spec.ts` — nomenclatura herdada da Fase 01, não mexi.
+  - **Teste da Fase 01 ajustado por necessidade:** as chaves novas de credencial, endpoint e bucket são `required()`, e o `env.validation.integration-spec.ts` tem um fixture `requiredEnv` com `validate({})` esperando sucesso. Sem acrescentar as novas ao fixture, um teste da Fase 01 quebraria. O fixture é exatamente a costura prevista para isso.
+  - **AC de startup verificada contra o app buildado**, não via `ts-node src/main.ts`: o `main.ts` importa `./metadata.js`, gerado pelo plugin CLI do swagger, que só existe depois do `nest build`. Resultado real: sem `STORAGE_ACCESS_KEY` o boot morre com `Config validation error: "STORAGE_ACCESS_KEY" is required`; com a chave de volta, `Nest application successfully started`.
+  - **`||` em vez de `??`** nas leituras de env, para casar com `database.config.ts` e os outros vizinhos — e porque env var vazia deve cair no default, o que `??` não faz. A regra `typescript-strict.md` usa `??` no exemplo; a divergência é deliberada e local ao diretório de config.
+  - Duas chaves a mais do que o plano listava: `QUEUE_JOB_ATTEMPTS` e `QUEUE_JOB_BACKOFF_DELAY_MS`, para que a política de retry que a TD-09 depende seja configuração e não número solto no código do produtor.
 
 ### SI-03.3 — Criar a entidade Video e a migration
 - **Status:** pending
