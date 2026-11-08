@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 4/12 completed
+**SIs:** 5/12 completed
 
 ### SI-03.1 — Provisionar object storage e broker no Compose
 - **Status:** completed
@@ -45,9 +45,14 @@
   - **`npm audit` é ruído herdado:** 39 vulnerabilidades (2 low, 13 moderate, 21 high, 3 critical), e **nenhuma** menciona `aws-sdk` — os caminhos apontam para o stack NestJS e para `preview-email`/`uuid` sob o `@nestjs-modules/mailer` da Fase 02. Fora do escopo desta fase; `npm audit fix --force` traz breaking changes.
 
 ### SI-03.5 — Montar o QueueModule e o contrato do job
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 7 passing em `src/queue/` (5 de integração contra o Redis real + 2 de módulo); suíte completa 197 passing / 31 suites, e2e 52 passing / 3 suites, `tsc --noEmit` exit 0, lint exit 0
+- **Observations:**
+  - **Erro meu no `library-refs.md`, corrigido:** eu havia fixado `ioredis: ^6.0.0` lendo o `npm view ioredis version` sem checar peers. O `typeorm@0.3.28` declara `peerOptional ioredis@^5.0.4`, então o install falha com `ERESOLVE` nomeando o TypeORM. A versão que satisfaz os dois ranges (BullMQ pede `>=5.0.0`) é `5.11.1`. Pin corrigido no `library-refs.md` com a razão registrada, para quem reler o artefato não repetir o caminho.
+  - **Confirmado em runtime que o `bullmq@6` exporta `createPostgresBackend` e `runMigrations`** — a descrição do backend Postgres no `library-refs.md` estava correta. Simplesmente não os usamos, por TD-14; o módulo documenta isso no comentário para ninguém "consertar" depois achando que faltou.
+  - **Teste de regressão para a decisão da TD-14:** um caso assere que `@nestjs/bullmq` não está no manifest, com uma asserção de sanidade (`bullmq` presente) para não passar sobre objeto vazio. Tive de ler o `package.json` via `fs` em vez de importar: `resolveJsonModule` está desligado no tsconfig e `require()` é proibido pelo ESLint — o lint pegou na primeira tentativa.
+  - **`onModuleDestroy` fecha a `Queue`** e a conexão ioredis. Sem isso o Jest vaza handle, e o `--forceExit` que a suíte usa esconderia o vazamento em vez de reportá-lo.
+  - Payload do job deliberadamente mínimo (`videoId` + `storageKey`): o worker relê a linha, então não carrega snapshot que pode envelhecer entre enfileirar e executar.
 
 ### SI-03.6 — Implementar o handshake de upload no VideosService
 - **Status:** pending

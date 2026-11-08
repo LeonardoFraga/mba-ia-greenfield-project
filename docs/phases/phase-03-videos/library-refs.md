@@ -5,7 +5,7 @@ libs:
     context7_id: "/taskforcesh/bullmq"
     fetched_at: "2026-11-08T19:09:44-03:00"
   "ioredis":
-    version: "^6.0.0"
+    version: "^5.11.1"
     context7_id: "/taskforcesh/bullmq"
     fetched_at: "2026-11-08T19:09:44-03:00"
   "@aws-sdk/client-s3":
@@ -29,7 +29,7 @@ Docs cache for the libraries this phase introduces. Fetched via the context7 MCP
 | Lib | Latest | `main` | `engines.node` |
 |-----|--------|--------|----------------|
 | `bullmq` | 6.7.2 | `./dist/cjs/index.js` | `>=14.18.0` |
-| `ioredis` | 6.0.0 | `./built/index.js` | — |
+| `ioredis` | 5.11.1 | `./built/index.js` | `>=12.22.0` |
 | `@aws-sdk/client-s3` | 3.1164.0 | `./dist-cjs/index.js` | `>=20.0.0` |
 | `@aws-sdk/s3-request-presigner` | 3.1164.0 | `./dist-cjs/index.js` | `>=20.0.0` |
 
@@ -113,7 +113,9 @@ await queue.obliterate();  // everything
 
 ### ioredis
 
-Introduced by `phase-03-videos/TD-14` as BullMQ's Redis driver. It is an **optional peer dependency** of `bullmq@6` (`ioredis >=5`), not a transitive one, so it must be a direct dependency of the project. `ioredis@6` is CommonJS (`main: ./built/index.js`).
+Introduced by `phase-03-videos/TD-14` as BullMQ's Redis driver. It is an **optional peer dependency** of `bullmq@6` (`ioredis >=5`), not a transitive one, so it must be a direct dependency of the project. CommonJS (`main: ./built/index.js`).
+
+> **Pin the 5.x line, not `latest`.** `ioredis@6` installs cleanly against BullMQ's `>=5.0.0` peer range but **conflicts with TypeORM**, which declares `peerOptional ioredis@^5.0.4` — `npm install ioredis@^6` fails with `ERESOLVE` naming `typeorm@0.3.28`. `5.11.1` satisfies both ranges. This file originally pinned `^6.0.0`, read off `npm view ioredis version`; the peer constraint was only discovered at install time in SI-03.5 and the pin was corrected here.
 
 The phase does not use `ioredis` directly: BullMQ consumes it internally once installed, and the application passes a plain `connection` object (`{ host, port }`) to `Queue` and `Worker`. It appears here because it is a dependency the phase adds and a version the implementation must pin — not because any code imports it.
 
