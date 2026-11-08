@@ -1,11 +1,11 @@
 ---
 kind: phase
 name: phase-03-videos
-status: dirty
-issue_count: 1
+status: clean
+issue_count: 0
 sources_mtime:
-  docs/phases/phase-03-videos/context.md: "2026-11-08T19:30:10-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T19:26:14-03:00"
+  docs/phases/phase-03-videos/context.md: "2026-11-08T19:35:53-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T19:31:28-03:00"
 issues:
   - id: IC-1
     status: resolved
@@ -52,14 +52,15 @@ issues:
     summary: "TD-13 pending — authorization policy for streaming and download"
     resolved_by: phase-03-videos/TD-13
   - id: OQ-4
-    status: open
+    status: resolved
     summary: "TD-14 pending — queue broker deployment shape, supersedes TD-01"
+    resolved_by: phase-03-videos/TD-14
 advisories: []
 ---
 
 # phase-03-videos — Validation
 
-13 of the slice's 14 TDs are `decided` and every capability bullet in `## Capability Coverage` maps to at least one of them. `TD-14` is newly open: it supersedes `TD-01`'s choice of queue backend because the acceptance criterion requires the queue to be visible as a Compose service, which the PostgreSQL backend satisfies in substance but not on inspection. It is tracked as `OQ-4` below. No `IC-N` fires from the overlap — `TD-14` is not decided yet, so there are not two decided TDs with mutually exclusive behaviour, and the supersede marker on `TD-01` is `/plan-resolve`'s to inject. Check 8 (cross-slice coverage) is suppressed — phase 3 has exactly one phase-scope decisions doc, so `CC-N` / `MC-cross-N` are not meaningful concepts here and the `## Capability Consistency` and `## Cross-slice Advisories` sections are omitted. `UIG-N` is skipped entirely: the phase has no UI capability bullet, so `## UI Inventory` is absent by construction. No custom rules exist in `docs/rules/plan-validate/`, so the custom-findings and suppressions sections are omitted.
+The slice has 14 TDs: 13 active and decided, plus `TD-01`, which `TD-14` superseded and which therefore drops out of active enumeration (its `<!-- status: superseded-by: ... -->` marker is surfaced in `## Decisions Index` and its block is absent from `## Decisions Detail`). Every capability bullet in `## Capability Coverage` maps to at least one active decided TD — the queue bullet now via `TD-04`, `TD-11` and `TD-14`. No `IC-N` fires from the supersession: exactly one of the two queue-backend TDs is active, so there are no two decided TDs with mutually exclusive runtime behaviour. The three conflicts the earlier rounds surfaced remain adjudicated inside `context.md` rather than left for `/plan-build` to guess at. Check 8 (cross-slice coverage) is suppressed — phase 3 has exactly one phase-scope decisions doc, so `CC-N` / `MC-cross-N` are not meaningful concepts here and the `## Capability Consistency` and `## Cross-slice Advisories` sections are omitted. `UIG-N` is skipped entirely: the phase has no UI capability bullet, so `## UI Inventory` is absent by construction. No custom rules exist in `docs/rules/plan-validate/`, so the custom-findings and suppressions sections are omitted.
 
 ## Findings
 
@@ -85,7 +86,7 @@ _None._
 
 ### Unresolved Open Questions
 
-- **OQ-4** — TD-14 pending — Queue Broker Deployment Shape, superseding `TD-01`. Resolution: fill the **Decision:** field of TD-14 in `docs/decisions/technical-decisions-phase-03-videos.md`, then re-run `/plan-validate 03`. The recommendation on record is Option A (a dedicated Redis service with hand-written `Queue`/`Worker` providers, `ioredis` installed as BullMQ's optional peer, `appendonly yes` for job durability) over Option B (`@nestjs/bullmq@12`, rejected as `type: module` against this CJS build) and Option C (keep the PostgreSQL backend and document it, the better engineering choice but the one that leaves the criterion resting on the reader). Resolving this issue carries three further edits that `/plan-resolve` owns: the `<!-- status: superseded-by: ... -->` marker on `TD-01`, a `**Revisions:**` entry on `TD-11` replacing the PostgreSQL-backend mechanics (`runMigrations()` in setup, connection target) while leaving its chosen strategy intact, and the queue row plus pending note in `context.md`'s `## Testing Requirements` override table.
+_None._
 
 ### UI Coverage Gaps
 
@@ -104,7 +105,10 @@ _None._
 - **AMB-1** _(resolved_by phase-03-videos/TD-05)_ — Persisted metadata set fixed as a hybrid: discrete columns for `duration_seconds`, `width`, `height`, `size_bytes` plus a `jsonb` `metadata` column for the `ffprobe` long tail (container, video codec, audio codec, bitrate, framerate). Recorded as a `**Revisions:**` entry on TD-05 so `/plan-build` derives the Data Model from it.
 - **AMB-2** _(resolved_by phase-03-videos/TD-05)_ — Thumbnail parameters fixed: one frame seeked at 10% of the `ffprobe` duration, scaled to 1280x720 preserving aspect ratio, JPEG at fixed quality. A percentage never falls outside the file, unlike a fixed timestamp. Recorded as a `**Revisions:**` entry on TD-05.
 - **ICC-1** _(resolved_by phase-03-videos/TD-02, phase-03-videos/TD-07)_ — Resolved by recording a deliberately narrow exception on both cross-layer TDs: the inherited strict-BFF model governs calls to the NestJS API, and presigned storage URLs minted server-side fall outside its scope. Recorded on both TDs rather than one because the two contracts are inherited independently by different frontend phases.
+- **OQ-4** _(resolved_by phase-03-videos/TD-14)_ — TD-14 decided: Option A — a dedicated `redis` Compose service with `Queue` and `Worker` as hand-written providers, `ioredis` installed as BullMQ's optional peer, and `appendonly yes` for job durability. Option B (`@nestjs/bullmq@12`) was rejected because the package is `type: module` with its `require` export condition pointing at the ESM build, the same edge `TD-02` and `TD-08` declined in this CJS project. Option C (keep the PostgreSQL backend and document it) is the better choice on engineering merit and is recorded as such in the TD, but it leaves the acceptance criterion resting on the reader. The resolution carried three further edits: the supersede marker on `TD-01`, two `**Revisions:**` entries on `TD-11` (connection target, no `runMigrations()`, plus the re-anchored testing-guide override) with its chosen strategy intact, and the rewritten queue row in `context.md`'s `## Testing Requirements` override table.
 
 ## Deferred follow-up (not an open issue)
 
-Correcting `.claude/skills/testing-guide-nestjs-project/references/external-systems.md` — § "Object Storage" to MinIO, § "Message Queue" to the BullMQ PostgreSQL backend, plus a queue producer/consumer row in the § 3 artifact table and the § 2 `BullModule.registerQueue()` example — is tracked as a **separate task** per `CLAUDE.md` § Scope Limits, since `.claude/` is provided foundation outside this phase's deliverable structure. It does not gate `/plan-build`: the authoritative instruction for `/implement` is the phase-local override table in `context.md`'s `## Testing Requirements`, backed by the `**Revisions:**` entries on TD-01 and TD-10.
+Correcting `.claude/skills/testing-guide-nestjs-project/references/external-systems.md` is tracked as a **separate task** per `CLAUDE.md` § Scope Limits, since `.claude/` is provided foundation outside this phase's deliverable structure. Scope of that task: § "Object Storage" to MinIO, a queue producer/consumer row in the § 3 artifact table, and the § 2 `BullModule.registerQueue()` example. Note that `TD-14` changed what is wrong with § "Message Queue" — the placeholder's assumption of **Redis is now correct**, while its `BullModule.forRoot` setup example and `getQueueToken` usage remain inapplicable, because `TD-14` keeps `Queue` and `Worker` as hand-written providers with no `BullModule`.
+
+None of this gates `/plan-build`: the authoritative instruction for `/implement` is the phase-local override table in `context.md`'s `## Testing Requirements`, backed by the `**Revisions:**` entries on `TD-10` (storage) and `TD-11` (queue).
