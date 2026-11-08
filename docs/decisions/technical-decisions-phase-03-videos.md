@@ -1,9 +1,9 @@
 ---
 scope_type: phase
 related_phases: [3]
-status: decided
+status: pending
 date: 2026-09-22
-scope_description: "Backend foundation for video upload and processing: queue technology, 10GB upload protocol, object-storage layout, video worker process model, FFmpeg integration, media access strategy, streaming/download delivery, unique URL identifier, video status lifecycle, the storage test strategy, the queue test strategy, upload size/content-type enforcement, and the authorization policy for media delivery."
+scope_description: "Backend foundation for video upload and processing: queue technology and broker deployment shape, 10GB upload protocol, object-storage layout, video worker process model, FFmpeg integration, media access strategy, streaming/download delivery, unique URL identifier, video status lifecycle, the storage test strategy, the queue test strategy, upload size/content-type enforcement, and the authorization policy for media delivery."
 ---
 
 # Technical Decisions — Phase 03: Upload e Processamento de Vídeos
@@ -446,6 +446,37 @@ _Subprojects in scope:_
 
 ---
 
+## TD-14: Queue Broker Deployment Shape — supersedes phase-03-videos/TD-01
+
+**Scope:** Backend
+
+**Capability:** Serviço de processamento em segundo plano (filas)
+
+**Context:** TD-01 chose the PostgreSQL backend and weighed the fourth container as its decisive cost. That reasoning holds on engineering grounds and is not what reopens it. What reopens it is the acceptance contract: the phase is graded on "object storage, **fila** e worker subindo via `docker compose` junto com o backend", and "não ter fila, worker e storage reais subindo no Compose" is listed under reprova automática. Under TD-01's decision the queue is real and does run inside Compose — in the `db` service's `bullmq` schema — but `compose.yaml` shows `api`, `db`, `mailpit`, `minio` and `video-worker` and **no service a reader can point at as the queue**. Satisfying the criterion in substance while failing it on inspection is a risk the phase does not need to carry, and it is cheapest to settle now, before `/plan-build` writes the Deliverables and the Events/Messages spec. Note what is *not* at stake: BullMQ's `Queue`/`Worker`/`QueueEvents` API is identical across backends, so the job-handling code, the retry/backoff semantics TD-09 depends on, and TD-11's chosen test strategy all survive any option here unchanged — only the deployment shape and the connection move. This TD also constrains TD-11's mechanics (`runMigrations()` is a PostgreSQL-backend-only step) and TD-11 must be revised to match whatever is chosen.
+
+**Options:**
+
+### Option A: BullMQ 6 + Redis, with hand-written `Queue`/`Worker` providers
+- A `redis` service joins Compose; `Queue` and `Worker` stay explicit providers in a `QueueModule`, exactly the wiring TD-01's chosen option already accepted. `bullmq@6` declares `ioredis` as an **optional peer dependency** (alongside `pg` and `redis`), so the Redis driver is installed explicitly — `ioredis@6` is CommonJS (`main: ./built/index.js`), matching the project's `nodenext`/CJS emit.
+- **Pros:** delivers an unmistakable queue service in `compose.yaml` at the lowest change cost, because the provider wiring is already what the plan assumed. Dependency surface stays CJS-clean, consistent with TD-02 and TD-08, which both rejected ESM-only packages in this build. Drops the `runMigrations()` bootstrap step and BullMQ's out-of-band schema, which TD-01 had recorded as a known cost. Redis is the backend BullMQ is primarily developed against, so it is the best-trodden path for the retry and event semantics TD-09 and TD-11 rely on.
+- **Cons:** the fourth container TD-01 was trying to avoid — a service, a config namespace, a healthcheck and an env block in every environment. Redis is in-memory by default, so job durability across a broker restart needs deliberate configuration (`appendonly yes`, or accepting that a video stuck in `processing` is re-enqueued by hand). Adds one direct dependency that the PostgreSQL backend did not need.
+
+### Option B: BullMQ 6 + Redis + `@nestjs/bullmq`
+- The same Redis service, plus the official Nest wrapper supplying `@Processor` / `@InjectQueue` decorators and module wiring in place of hand-written providers.
+- **Pros:** everything Option A delivers, plus the decorator ergonomics, and it would make the project's own testing-guide snippets (`BullModule.forRoot`, `BullModule.registerQueue()`, `getQueueToken`) correct again — shrinking the scope of the separate guide-correction task.
+- **Cons:** `@nestjs/bullmq@12.0.1` is `type: module` and its exports map points the `require` condition at the same ESM build, so a `nodenext`/CJS project reaches it only through Node's `require(esm)` interop — workable on Node 25 but precisely the compatibility edge this project has now declined twice (TD-01's own Option C on `pg-boss@12`, TD-08 on `nanoid@6`). Peer ranges are otherwise fine (`@nestjs/core ^11`, `bullmq ^6`). Note that TD-01's Option A presented `@nestjs/bullmq` as an unqualified win; the registry says it is ESM-only, which was not checked at the time.
+
+### Option C: Keep the PostgreSQL backend and make it explicit in the docs
+- No infrastructure change. The Events/Messages spec and `CLAUDE.md` state plainly that the broker is PostgreSQL, with a dedicated healthcheck surfacing queue liveness.
+- **Pros:** zero new infrastructure, and TD-01's reasoning — durable by construction, no fourth service, no extra config namespace — remains fully intact. Strictly the better engineering choice for a queue carrying a handful of jobs per minute.
+- **Cons:** relies on the reader doing the mapping from "no queue service" to "the queue is a schema inside `db`". It protects the criterion only if someone reads the explanation, which is exactly the assumption the phase should not make. Leaves the most important non-functional claim of the phase resting on documentation rather than on something visible.
+
+**Recommendation:** **Option A (Redis with hand-written providers)** — the criterion asks for a queue running in Compose, and the only option that makes that true by inspection rather than by explanation is a broker service of its own. Between the two Redis shapes, Option A is strictly cheaper here: the hand-written `QueueModule` is already what the plan assumed under TD-01, so nothing in the job code or the module layout changes, while Option B would reintroduce the ESM-only dependency this build has twice avoided to buy decorator sugar the project does not need — and the stale testing-guide snippets it would fix are already owned by the separate guide-correction task. Option C remains the better decision on engineering merit alone and is recorded here as such; it loses on a non-engineering criterion that is nonetheless the one the phase is graded against. The durability gap is the real cost to accept: pin `appendonly yes` on the Redis service so an enqueued job survives a broker restart, which is the property TD-01 got for free from PostgreSQL.
+
+**Decision:** _[pending]_
+
+---
+
 ## Decisions Summary
 
 | ID | Scope | Decision | Recommendation | Choice |
@@ -463,3 +494,4 @@ _Subprojects in scope:_
 | TD-11 | Backend | Queue Producer and Consumer Test Strategy | A (real `Worker` in-process via `QueueEvents`, direct invocation kept for branch units) | A (Real `Worker` in-process via `QueueEvents`; direct processor invocation kept for branch-level unit tests) |
 | TD-12 | Cross-layer | Upload Size and Content-Type Enforcement Point | A (declare at initiate, verify with `HeadObject` at complete) | A (Declare at initiate, verify with `HeadObject` at complete) |
 | TD-13 | Cross-layer | Authorization Policy for Streaming and Download | A (public for `ready`, state-gated) | A (Public for `ready`, state-gated) |
+| TD-14 | Backend | Queue Broker Deployment Shape _(supersedes TD-01)_ | A (Redis service + hand-written `Queue`/`Worker` providers) | _[pending]_ |
