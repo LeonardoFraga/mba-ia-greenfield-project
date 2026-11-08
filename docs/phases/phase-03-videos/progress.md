@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 2/12 completed
+**SIs:** 3/12 completed
 
 ### SI-03.1 — Provisionar object storage e broker no Compose
 - **Status:** completed
@@ -24,9 +24,15 @@
   - Duas chaves a mais do que o plano listava: `QUEUE_JOB_ATTEMPTS` e `QUEUE_JOB_BACKOFF_DELAY_MS`, para que a política de retry que a TD-09 depende seja configuração e não número solto no código do produtor.
 
 ### SI-03.3 — Criar a entidade Video e a migration
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 12 passing nos testes do SI (entidade + migrations); suíte completa 179 passing / 27 suites, e2e 52 passing / 3 suites, `tsc --noEmit` exit 0, lint exit 0
+- **Observations:**
+  - **Enum no arquivo da entidade**, não em `video-status.enum.ts` como o plano previa: o precedente do projeto é `verification-token.entity.ts`, que exporta seu enum do próprio arquivo da entidade.
+  - **O lado inverso da relação custou mais do que parecia.** A regra `nestjs-entities.md` manda definir os dois lados, então `Channel` ganhou `@OneToMany(() => Video)`. Consequência em cascata: (1) todo DataSource de teste que registra `Channel` passou a precisar de `Video` no array de entidades, sob pena de `Entity metadata for Channel#videos was not found` — 10 arquivos de spec das Fases 01/02 ajustados; (2) o `VideosModule` com `forFeature([Video])` teve de ser criado **aqui** e não no SI-03.8, porque sem ele o `AppModule` real não resolve o lado inverso e o `openapi-export.integration-spec.ts` falha no bootstrap. O plano do SI-03.8 foi ajustado de "criar" para "estender".
+  - **`cleanAllTables` ganhou `DELETE FROM "videos"`** em ordem reversa de FK. O `ON DELETE CASCADE` de `channels` cobriria, mas limpeza de teste por cascade implícito é frágil.
+  - **`migrations.integration-spec.ts` reescrito em quatro pontos:** cadeia de 3 migrations, 5 tabelas, e o teste de revert agora assere que `videos` cai — porque a minha migration passou a ser a cabeça da cadeia, e não mais as de token. Acrescentei um teste novo garantindo que reverter a cabeça não leva as tabelas de token, que era a garantia que a asserção antiga dava de graça.
+  - **Para tarefa separada:** `const ALL_ENTITIES = [...]` está duplicado em 10 arquivos de spec. Exportar a lista de `src/test/create-test-data-source.ts` tornaria a próxima entidade uma mudança de uma linha em vez de dez. Não fiz aqui para não misturar refactor de 10 arquivos num SI funcional.
+  - **Fora de escopo, observado:** `create-test-data-source.ts` lê `process.env.DB_DATABASE`, mas o `.env` define `DB_NAME` — funciona só porque o fallback `'streamtube'` coincide com o nome real do banco. Herdado da Fase 01.
 
 ### SI-03.4 — Implementar o adapter de object storage
 - **Status:** pending

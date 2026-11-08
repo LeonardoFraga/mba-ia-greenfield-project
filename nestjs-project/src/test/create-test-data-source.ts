@@ -27,6 +27,9 @@ export function createTestDataSource(
 }
 
 export async function cleanAllTables(dataSource: DataSource): Promise<void> {
+  // Reverse FK order. `videos` would also go via the ON DELETE CASCADE from
+  // `channels`, but relying on that leaves cleanup implicit.
+  await dataSource.query('DELETE FROM "videos"');
   await dataSource.query('DELETE FROM "refresh_tokens"');
   await dataSource.query('DELETE FROM "verification_tokens"');
   await dataSource.query('DELETE FROM "channels"');

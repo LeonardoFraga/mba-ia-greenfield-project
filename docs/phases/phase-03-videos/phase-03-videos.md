@@ -229,7 +229,7 @@ Entregar upload de vídeos de até 10GB sem passar os bytes pela API, processame
 
 1. Criar `src/videos/videos.controller.ts` com as quatro rotas conforme `### API Contracts`, delegando ao service sem lógica própria (per `.claude/rules/nestjs-controllers.md`)
 2. Decorar com `@nestjs/swagger` — bodies, respostas e os códigos de erro do `### Error Catalog` (per `openapi-docs-nestjs/TD-01`)
-3. Criar `src/videos/videos.module.ts` importando `TypeOrmModule.forFeature([Video])`, `StorageModule` e `QueueModule`, e registrá-lo no `AppModule`
+3. Estender `src/videos/videos.module.ts` (criado no SI-03.3, onde o `forFeature([Video])` passou a ser pré-requisito de boot) com `StorageModule`, `QueueModule`, o controller e os providers do service
 
 **Tests:**
 

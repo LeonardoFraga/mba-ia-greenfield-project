@@ -27,13 +27,14 @@ import {
 } from '../test/create-test-data-source';
 import { clearMailpitMessages } from '../test/mailpit';
 import { AuthService } from './auth.service';
+import { Video } from '../videos/entities/video.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import {
   VerificationToken,
   VerificationTokenType,
 } from './entities/verification-token.entity';
 
-const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken];
+const ALL_ENTITIES = [User, Channel, RefreshToken, VerificationToken, Video];
 
 async function createAuthTestModule(): Promise<TestingModule> {
   const ds = createTestDataSource(ALL_ENTITIES);
