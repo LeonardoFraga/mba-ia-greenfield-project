@@ -156,6 +156,30 @@ describe('VideosService (integration — real DB + MinIO)', () => {
     await expect(videoRepository.count()).resolves.toBe(0);
   }, 30000);
 
+  it('should compensate the draft when opening the multipart fails', async () => {
+    // The handshake writes the row and then calls storage, and a database
+    // transaction cannot span an S3 call — so the row is protected by an
+    // explicit compensating delete instead. The project's testing rules ask
+    // for that path to be proven against the real database, which is what
+    // this does: make the collaborator fail, then assert nothing was left
+    // behind for the reaper to puzzle over later.
+    const { user } = await createUserWithChannel();
+
+    const failing = jest
+      .spyOn(storage, 'createMultipartUpload')
+      .mockRejectedValue(new Error('storage unavailable'));
+
+    try {
+      await expect(service.initiateUpload(user.id, dto)).rejects.toThrow(
+        'storage unavailable',
+      );
+
+      await expect(videoRepository.count()).resolves.toBe(0);
+    } finally {
+      failing.mockRestore();
+    }
+  }, 30000);
+
   it('should allocate distinct public ids across videos', async () => {
     const { user } = await createUserWithChannel();
 
