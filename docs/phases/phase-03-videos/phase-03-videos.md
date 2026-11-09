@@ -657,48 +657,48 @@ SI-03.3 (root — entidade e migration; a tabela channels já existe da Fase 02)
 
 ## Deliverables
 
-- [ ] SI-03.1 — Provisionar object storage e broker no Compose
-- [ ] SI-03.2 — Configurar storage e fila no ConfigModule
-- [ ] SI-03.3 — Criar a entidade Video e a migration
-- [ ] SI-03.4 — Implementar o adapter de object storage
-- [ ] SI-03.5 — Montar o QueueModule e o contrato do job
-- [ ] SI-03.6 — Implementar o handshake de upload no VideosService
-- [ ] SI-03.7 — Implementar a finalização do upload com verificação e enfileiramento
-- [ ] SI-03.8 — Expor as rotas autenticadas de upload
-- [ ] SI-03.9 — Expor as rotas públicas de entrega
-- [ ] SI-03.10 — Montar o container do video worker
-- [ ] SI-03.11 — Implementar o processor: metadados e thumbnail
-- [ ] SI-03.12 — Implementar o reaper de uploads abandonados
+- [x] SI-03.1 — Provisionar object storage e broker no Compose
+- [x] SI-03.2 — Configurar storage e fila no ConfigModule
+- [x] SI-03.3 — Criar a entidade Video e a migration
+- [x] SI-03.4 — Implementar o adapter de object storage
+- [x] SI-03.5 — Montar o QueueModule e o contrato do job
+- [x] SI-03.6 — Implementar o handshake de upload no VideosService
+- [x] SI-03.7 — Implementar a finalização do upload com verificação e enfileiramento
+- [x] SI-03.8 — Expor as rotas autenticadas de upload
+- [x] SI-03.9 — Expor as rotas públicas de entrega
+- [x] SI-03.10 — Montar o container do video worker
+- [x] SI-03.11 — Implementar o processor: metadados e thumbnail
+- [x] SI-03.12 — Implementar o reaper de uploads abandonados
 
 **Capacidades da fase** (de `docs/project-plan.md`, Fase 03):
 
-- [ ] Object storage para vídeos e thumbnails, com buckets separados por política de acesso
-- [ ] Fila de processamento em segundo plano com worker consumindo em container próprio
-- [ ] Upload de até 10GB sem passar os bytes pela API, com o teto imposto no initiate e verificado no complete
-- [ ] Pré-cadastro automático do vídeo como rascunho ao iniciar o upload
-- [ ] Processamento automático após o upload, extraindo duração e metadados
-- [ ] Thumbnail gerado automaticamente a partir de um frame do vídeo
-- [ ] URL única por vídeo, sem conflito, com índice único garantindo-a
-- [ ] Reprodução via streaming, com a storage respondendo `206` a range requests
-- [ ] Download do vídeo pelo usuário
+- [x] Object storage para vídeos e thumbnails, com buckets separados por política de acesso
+- [x] Fila de processamento em segundo plano com worker consumindo em container próprio
+- [x] Upload de até 10GB sem passar os bytes pela API, com o teto imposto no initiate e verificado no complete
+- [x] Pré-cadastro automático do vídeo como rascunho ao iniciar o upload
+- [x] Processamento automático após o upload, extraindo duração e metadados
+- [x] Thumbnail gerado automaticamente a partir de um frame do vídeo
+- [x] URL única por vídeo, sem conflito, com índice único garantindo-a
+- [x] Reprodução via streaming, com a storage respondendo `206` a range requests
+- [x] Download do vídeo pelo usuário
 
 **Infraestrutura:**
 
-- [ ] `docker compose up -d` sobe `nestjs-api`, `db`, `mailpit`, `minio`, `redis` e `video-worker`
-- [ ] Os buckets `videos` e `thumbnails` existem e o de vídeos tem a lifecycle rule de upload incompleto
-- [ ] O Redis persiste com `appendonly yes`
-- [ ] A migration cria a tabela `videos` ligada a `channels`
+- [x] `docker compose up -d` sobe `nestjs-api`, `db`, `mailpit`, `minio`, `redis` e `video-worker`
+- [x] Os buckets `videos` e `thumbnails` existem, e o de thumbnails é publicamente legível (`s3:GetObject` para `*`). A lifecycle rule de upload incompleto **não** é aplicada localmente: este build do MinIO não implementa `AbortIncompleteMultipartUpload` — verificado de três formas, e escopado para o S3 de produção pela revisão da `TD-03`. O reaper do SI-03.12 é o que recolhe os multiparts abandonados no ambiente local.
+- [x] O Redis persiste com `appendonly yes`
+- [x] A migration cria a tabela `videos` ligada a `channels`
 
 **Full test suites** _(todo comando `npm`/`npx` roda dentro do container, por `nestjs-project/CLAUDE.md`)_:
 
-- [ ] Suíte de unit + integração passa (`docker compose exec nestjs-api npm test -- --runInBand`)
-- [ ] Suíte E2E passa (`docker compose exec nestjs-api npm run test:e2e`)
-- [ ] Type-check limpo (`docker compose exec nestjs-api npx tsc --noEmit`) — exit code 0
-- [ ] Lint passa (`docker compose exec nestjs-api npm run lint`)
+- [x] Suíte de unit + integração passa (`docker compose exec nestjs-api npm test -- --runInBand`)
+- [x] Suíte E2E passa (`docker compose exec nestjs-api npm run test:e2e`)
+- [x] Type-check limpo (`docker compose exec nestjs-api npx tsc --noEmit`) — exit code 0
+- [x] Lint passa (`docker compose exec nestjs-api npm run lint`)
 
 **Documentação:**
 
-- [ ] `openapi.json` reexportado com as sete rotas novas (`docker compose exec nestjs-api npm run openapi:export`)
-- [ ] `CLAUDE.md` da raiz com a seção de vídeos (módulo, endpoints, fila/worker, storage)
-- [ ] `nestjs-project/CLAUDE.md` com os três serviços novos no bloco Services e as chaves de env novas
-- [ ] `progress.md` da fase com status e testes por SI
+- [x] `openapi.json` reexportado com as sete rotas novas (`docker compose exec nestjs-api npm run openapi:export`)
+- [x] `CLAUDE.md` da raiz com a seção de vídeos (módulo, endpoints, fila/worker, storage)
+- [x] `nestjs-project/CLAUDE.md` com os três serviços novos no bloco Services e as chaves de env novas
+- [x] `progress.md` da fase com status e testes por SI

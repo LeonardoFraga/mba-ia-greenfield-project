@@ -23,8 +23,62 @@ See `docs/diagrams/software-arch.mermaid` for the full diagram. Key containers:
 - **Video Worker** (FFmpeg) → consumes jobs from queue, processes videos, updates DB and storage
 - **Database** (PostgreSQL) → users, channels, videos, comments, likes
 - **Object Storage** (S3/MinIO) → video files and thumbnails
-- **Message Queue** (TBD) → video processing job queue
+- **Message Queue** (Redis + BullMQ) → video processing job queue
 - **Email Service** (SMTP) → account confirmation and password recovery
+
+## Videos (Fase 03)
+
+Upload, processing and delivery of videos. The bytes never pass through the API.
+
+**Module:** `nestjs-project/src/videos/` — owns the `Video` entity, the upload
+handshake, public delivery and the abandoned-upload reaper. The worker side
+lives in `src/videos/worker/`.
+
+**Endpoints** (full contract in `nestjs-project/openapi.json`):
+
+| Method | Route | Auth | Purpose |
+|--------|-------|------|---------|
+| `POST` | `/videos` | Bearer | Opens the upload: pre-registers the draft row and the S3 multipart |
+| `POST` | `/videos/{id}/parts` | Bearer | Returns presigned `UploadPart` URLs |
+| `POST` | `/videos/{id}/complete` | Bearer | Verifies the stored size, then enqueues processing |
+| `DELETE` | `/videos/{id}` | Bearer | Aborts the upload and drops the draft |
+| `GET` | `/videos/{publicId}` | Public | Metadata of a `ready` video |
+| `GET` | `/videos/{publicId}/stream` | Public | Returns `{ url, expiresIn }` — a short-lived presigned GET the player uses as its source; storage answers `Range` on it with `206` |
+| `GET` | `/videos/{publicId}/download` | Public | The same mechanism with a `content-disposition: attachment` override, so the browser saves the file |
+
+**Upload path.** The client slices the file and `PUT`s each part straight to
+storage with a presigned URL, so a 10GB upload never touches the API process. A
+presigned `PUT` cannot constrain size or content type (the SDK signs the payload
+as `UNSIGNED-PAYLOAD`), so the ceiling is enforced at initiate from the declared
+size and **verified** at complete against `HeadObject.ContentLength`.
+
+**Queue and worker.** The API publishes a `video.process` job to a Redis-backed
+BullMQ queue; the `video-worker` container runs the same image with
+`npm run start:worker` and consumes it. `Queue` and `Worker` are hand-written
+providers — `@nestjs/bullmq` is ESM-only and this project emits CommonJS.
+Queue-level retries absorb transient faults; only exhausting the attempts moves
+a row to `failed` with a stored `processing_error`.
+
+**Processing.** The worker signs a GET and hands the URL to `ffprobe` and
+`ffmpeg` as an HTTP input, so it reads byte ranges from storage instead of
+downloading the object — measured at ~1–2% of the file, bounded by the GOP
+rather than the file size. It extracts duration, dimensions and the codec tail,
+generates a thumbnail from a frame at 10% of the duration fitted into 1280x720,
+and moves the row to `ready`. The container stays stateless: nothing is ever
+written to its filesystem.
+
+Both delivery routes hand the client a URL rather than proxying bytes: the API
+answers `200` with `{ url, expiresIn }` and the player or browser talks to
+storage directly, so neither playback nor download passes through the API.
+
+**Storage.** Two buckets with different access policies: `videos` is private and
+every read goes through a short-lived presigned URL, while `thumbnails` is
+public and served by permanent URL. `STORAGE_PUBLIC_URL` is the one setting that
+must *not* be a Compose service name — a browser consumes it.
+
+**Status lifecycle.** `draft → uploading → processing → ready | failed`. This
+enum describes *processing* only; publication is editorial state and gets its
+own field in Fase 04 rather than new values here.
 
 ## Docker Networking
 
