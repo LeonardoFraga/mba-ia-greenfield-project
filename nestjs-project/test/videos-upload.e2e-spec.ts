@@ -43,6 +43,8 @@ interface CompleteBody {
 
 const TEN_GB = 10 * 1024 * 1024 * 1024;
 const BODY_SIZE = 4096;
+/** S3 floor for every part but the last. */
+const MIN_PART_SIZE = 5 * 1024 * 1024;
 
 describe('Videos upload (e2e)', () => {
   let app: INestApplication<App>;
@@ -130,6 +132,44 @@ describe('Videos upload (e2e)', () => {
     expect(response.status).toBe(200);
 
     return { partNumber: 1, etag: response.headers.get('etag') as string };
+  }
+
+  /**
+   * Uploads a genuinely multi-part object and returns both parts' real ETags.
+   *
+   * The first part is 5MiB because S3 requires every part but the last to be at
+   * least that — the constraint that only shows up once an upload has more than
+   * one part, which is exactly the path a 10GB file takes.
+   */
+  async function putTwoParts(
+    token: string,
+    videoId: string,
+  ): Promise<{ parts: { partNumber: number; etag: string }[]; total: number }> {
+    const sizes = [MIN_PART_SIZE, 4096];
+
+    const signed = await request(server())
+      .post(`/videos/${videoId}/parts`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ partNumbers: [1, 2] })
+      .expect(200);
+
+    const urls = bodyOf<SignPartsBody>(signed).parts;
+    expect(urls).toHaveLength(2);
+
+    const parts: { partNumber: number; etag: string }[] = [];
+    for (const [index, { partNumber, url }] of urls.entries()) {
+      const response = await fetch(url, {
+        method: 'PUT',
+        body: new Uint8Array(Buffer.alloc(sizes[index], 'p')),
+      });
+      expect(response.status).toBe(200);
+      parts.push({
+        partNumber,
+        etag: response.headers.get('etag') as string,
+      });
+    }
+
+    return { parts, total: sizes[0] + sizes[1] };
   }
 
   describe('POST /videos — initiate', () => {
@@ -294,6 +334,37 @@ describe('Videos upload (e2e)', () => {
       const waiting = await processingQueue.queue.getJobs(['waiting']);
       expect(waiting).toHaveLength(1);
       expect(waiting[0].data.videoId).toBe(id);
+
+      await storage.deleteObject(row.storage_key as string);
+    });
+
+    it('assembles a genuinely multi-part upload into one object', async () => {
+      // The headline capability of the phase is a 10GB upload, which is only
+      // possible because N parts are assembled into a single object. Every
+      // other case here completes with one part, so this is the one that
+      // actually exercises that path — including S3's 5MiB floor for
+      // non-final parts.
+      const token = await registerConfirmAndLogin(app, nextEmail());
+      const { id } = bodyOf<InitiateBody>(
+        await initiate(token, { size: MIN_PART_SIZE + 4096 }).expect(201),
+      );
+
+      const { parts, total } = await putTwoParts(token, id);
+
+      await request(server())
+        .post(`/videos/${id}/complete`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ parts })
+        .expect(200);
+
+      const row = await videoRepository.findOneByOrFail({ id });
+      expect(row.status).toBe(VideoStatus.PROCESSING);
+      // Verified against storage, not against what the client claimed: the
+      // assembled object must weigh exactly the sum of the parts.
+      expect(row.size_bytes).toBe(String(total));
+
+      const head = await storage.headObject(row.storage_key as string);
+      expect(head.contentLength).toBe(total);
 
       await storage.deleteObject(row.storage_key as string);
     });
