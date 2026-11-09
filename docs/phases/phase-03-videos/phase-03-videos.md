@@ -106,7 +106,7 @@ Entregar upload de vídeos de até 10GB sem passar os bytes pela API, processame
 **Technical actions:**
 
 1. Instalar `@aws-sdk/client-s3` e `@aws-sdk/s3-request-presigner` (per `library-refs.md`)
-2. Criar `src/storage/storage.service.ts` com `createMultipartUpload`, `signUploadPart`, `completeMultipartUpload`, `abortMultipartUpload`, `headObject`, `signGetObject` e `putObject`, cliente configurado com `forcePathStyle: true` (per `phase-03-videos/TD-02`, `phase-03-videos/TD-07`, `phase-03-videos/TD-12`)
+2. Criar `src/storage/storage.service.ts` com `createMultipartUpload`, `signUploadPart`, `completeMultipartUpload`, `abortMultipartUpload`, `headObject`, `signGetObject`, `signInternalGetObject` e `putObject`, cliente configurado com `forcePathStyle: true` (per `phase-03-videos/TD-02`, `phase-03-videos/TD-07`, `phase-03-videos/TD-12`, `phase-03-videos/TD-10` Revisions). `signGetObject` assina no endpoint público, para o cliente fora da rede; `signInternalGetObject` no interno, para o input de FFmpeg do worker — a `TD-10` Revisions registra por que são dois
 3. Criar `src/storage/storage.module.ts` exportando o service, importando `ConfigModule` (per `phase-03-videos/TD-10`)
 
 **Tests:**
