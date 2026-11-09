@@ -73,8 +73,16 @@ storage directly, so neither playback nor download passes through the API.
 
 **Storage.** Two buckets with different access policies: `videos` is private and
 every read goes through a short-lived presigned URL, while `thumbnails` is
-public and served by permanent URL. `STORAGE_PUBLIC_URL` is the one setting that
-must *not* be a Compose service name — a browser consumes it.
+public and served by permanent URL.
+
+Two endpoints, by consumer. Server-side calls use `STORAGE_ENDPOINT` (the
+Compose service name), while every URL that leaves the network — upload parts,
+stream, download — is presigned against `STORAGE_PUBLIC_URL`, which must *not*
+be a Compose service name because a browser resolves it. This is not cosmetic:
+SigV4 covers the `Host` header, so a URL signed against the internal endpoint
+cannot be rewritten afterwards and is simply unusable outside Docker. The
+worker is the exception and uses `signInternalGetObject`, since its FFmpeg
+input is consumed inside the container.
 
 **Status lifecycle.** `draft → uploading → processing → ready | failed`. This
 enum describes *processing* only; publication is editorial state and gets its

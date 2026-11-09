@@ -205,9 +205,11 @@ describe('Video processing (integration — real queue + MinIO + FFmpeg)', () =>
 
       // Probe the stored object itself: the 1080p source must have been fitted
       // into the 1280x720 box, which only a real decode can confirm.
-      const { url } = await storage.signGetObject(
+      // Internal endpoint: this spec fetches the object from inside the
+      // container, like the worker does.
+      const { url } = await storage.signInternalGetObject(
         processed.thumbnail_key as string,
-        { bucket: 'thumbnails' },
+        'thumbnails',
       );
       const thumbnailProbe = await probeVideo(url);
       expect(thumbnailProbe.width).toBe(1280);
