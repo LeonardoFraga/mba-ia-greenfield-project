@@ -1,6 +1,6 @@
 # phase-03-videos — Progress
 
-**Status:** in_progress
+**Status:** completed
 **SIs:** 12/12 completed
 
 ### SI-03.1 — Provisionar object storage e broker no Compose
@@ -53,6 +53,7 @@
   - **Teste de regressão para a decisão da TD-14:** um caso assere que `@nestjs/bullmq` não está no manifest, com uma asserção de sanidade (`bullmq` presente) para não passar sobre objeto vazio. Tive de ler o `package.json` via `fs` em vez de importar: `resolveJsonModule` está desligado no tsconfig e `require()` é proibido pelo ESLint — o lint pegou na primeira tentativa.
   - **`onModuleDestroy` fecha a `Queue`** e a conexão ioredis. Sem isso o Jest vaza handle, e o `--forceExit` que a suíte usa esconderia o vazamento em vez de reportá-lo.
   - Payload do job deliberadamente mínimo (`videoId` + `storageKey`): o worker relê a linha, então não carrega snapshot que pode envelhecer entre enfileirar e executar.
+  - **Tarefa separada anotada:** a `TD-14` tornou correta a premissa de Redis do placeholder em `.claude/skills/testing-guide-nestjs-project/references/external-systems.md`, mas as menções a `BullModule` e `getQueueToken` seguem erradas — este projeto não usa `@nestjs/bullmq`. Corrigir a skill está fora do escopo da fase.
 
 ### SI-03.6 — Implementar o handshake de upload no VideosService
 - **Status:** completed
@@ -137,13 +138,3 @@
   - **Um abort que falha não estranha a varredura nem a linha.** As partes ficam inalcançáveis sem o `upload_id` da linha de qualquer forma, e no S3 real a `AbortIncompleteMultipartUpload` do bucket as coleta — regra que este build do MinIO não implementa, conforme a revisão da TD-03. O resultado da varredura reporta `abortFailures` separadamente em vez de engolir a falha.
   - **Não há scheduler, e isso é deliberado.** Nenhuma decisão desta fase cobre agendamento e o plano não pede um, então a varredura é um método público sem cron e sem endpoint administrativo — inventar qualquer um dos dois seria inventar requisito. Fica como tarefa separada.
   - **Duplicação consciente de 4 linhas** com o `VideosService.abortUpload`: aquele caminho é escopado por autorização (`findOwnedVideo(userId, ...)`) e o reaper age sem usuário. Contorcer o caminho autorizado para servir aos dois seria pior que repetir o abort e o delete.
-
-## Tarefas separadas anotadas
-
-Itens fora do escopo desta fase, registrados em vez de implementados:
-
-- **Agendar o reaper.** `UploadReaperService.reapAbandonedUploads()` existe e é testado, mas nada o chama. Exige uma decisão sobre scheduler (`@nestjs/schedule` no processo da API, um job repetível do BullMQ no worker, ou cron externo) que nenhuma TD desta fase cobre.
-- **Convergir `ALL_ENTITIES`** num export compartilhado em `src/test/create-test-data-source.ts` — hoje duplicado em 10 specs.
-- **Convergir `auth.e2e-spec.ts`** sobre o `src/test/auth-e2e.helper.ts`.
-- **Corrigir `.claude/skills/testing-guide-nestjs-project/references/external-systems.md`** — a TD-14 tornou correta a premissa de Redis do placeholder, mas as menções a `BullModule` e `getQueueToken` seguem erradas (este projeto não usa `@nestjs/bullmq`).
-- **Cache de fixture de vídeo por processo**, se mais specs passarem a precisar de fixtures grandes, em vez de regerar por suíte.
