@@ -27,6 +27,12 @@ services:
       - POSTGRES_USER=streamtube
       - POSTGRES_PASSWORD=streamtube
       - POSTGRES_DB=streamtube
+    # Without this the cluster lives in the container's writable layer, so a
+    # `docker compose down` — or any recreation of the container — silently
+    # discards the database and every migration has to run again. `minio` and
+    # `redis` already persist; this brings the database in line with them.
+    volumes:
+      - db-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U streamtube"]
       interval: 5s
@@ -150,5 +156,6 @@ services:
         condition: service_healthy
 
 volumes:
+  db-data:
   minio-data:
   redis-data:

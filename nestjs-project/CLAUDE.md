@@ -36,7 +36,7 @@ docker compose exec nestjs-api npm run start:dev
 
 Services:
 - `nestjs-api` — NestJS API, port `3000`
-- `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube`
+- `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube`. Data lives in the `db-data` volume, so it survives `docker compose down` and any recreation of the container
 - `mailpit` — SMTP sink, SMTP on `1025`, web UI on `8025`
 - `minio` — S3-compatible object storage, API on `9000`, console on `9001`, key/secret `streamtube`
 - `minio-init` — one-shot: creates the `videos` and `thumbnails` buckets and makes `thumbnails` publicly readable, then exits `0`. An exited `minio-init` is the expected steady state, not a failure.
@@ -56,8 +56,12 @@ docker compose exec db pg_isready -U streamtube
 docker compose logs nestjs-api
 docker compose logs db
 
-# Tear down the entire environment
+# Tear down the entire environment (named volumes are kept, so the database,
+# MinIO objects and queued jobs survive)
 docker compose down
+
+# Tear down AND discard all persisted data — migrations and seeds must be re-run
+docker compose down -v
 ```
 
 ## Commands
