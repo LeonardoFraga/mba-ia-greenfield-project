@@ -164,7 +164,7 @@ by `src/config/env.validation.ts`. The rest have defaults.
 | `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` | — | |
 | `STORAGE_BUCKET_VIDEOS` | — | Private bucket; every read is a presigned GET |
 | `STORAGE_BUCKET_THUMBNAILS` | — | Public, cacheable bucket |
-| `STORAGE_PUBLIC_URL` | — | **The one host that must not be a Compose service name** — it is handed to a browser, so `http://localhost:9000` locally |
+| `STORAGE_PUBLIC_URL` | — | **The one host that must not be a Compose service name** — it is handed to a browser, so `http://localhost:9000` locally. Every client-facing presigned URL (upload parts, stream, download) is signed against it; `STORAGE_ENDPOINT` serves server-side calls and the worker's FFmpeg input |
 | `STORAGE_PRESIGN_TTL_SECONDS` | `900` | Presigned URL lifetime |
 | `STORAGE_UPLOAD_PART_SIZE_BYTES` | `52428800` | 50MB: a 10GB file is 200 parts, well under the 10,000 cap |
 | `STORAGE_MAX_UPLOAD_BYTES` | `10737418240` | 10GB ceiling, enforced at initiate and verified at complete |
@@ -177,6 +177,24 @@ by `src/config/env.validation.ts`. The rest have defaults.
 `FFMPEG_VERSION` is a Docker build `ARG` in `Dockerfile.dev` (not an env var),
 pinned to the exact apt candidate so an image rebuild cannot silently change
 the FFmpeg the worker runs.
+
+## Test Environment Overrides
+
+Two setup files rewrite env vars after `dotenv/config` in both Jest configs.
+Neither is cosmetic; removing either breaks the suites in ways that look like
+product bugs.
+
+### `src/test/jest-storage-public-url.ts`
+
+Points `STORAGE_PUBLIC_URL` at `http://minio:9000`. Client-facing URLs are
+presigned against that variable so a browser on the host can use them — but
+the suites run *inside* a container, where `localhost` is the container itself,
+and SigV4 covers the `Host` header so the URL cannot be rewritten after
+signing. Without the override, every spec that fetches a URL it signed fails.
+
+What the override cannot prove is that signing uses the public endpoint rather
+than the internal one, since here the two coincide. That property is guarded by
+`src/storage/storage.service.spec.ts`, which configures them differently.
 
 ## Test Queue Namespace
 

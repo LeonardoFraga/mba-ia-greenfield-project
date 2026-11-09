@@ -36,15 +36,27 @@ export interface SignedUrl {
 
 @Injectable()
 export class StorageService implements OnModuleDestroy {
+  /** Server-side calls: reaches storage over the Compose network. */
   private readonly client: S3Client;
+  /**
+   * Signs URLs that leave the network.
+   *
+   * SigV4 covers the `Host` header, so the host baked into a presigned URL
+   * cannot be swapped afterwards — rewriting it yields
+   * `SignatureDoesNotMatch`. A URL signed against the internal endpoint is
+   * therefore unusable by a browser, which is why the signing endpoint is a
+   * separate concern from the one server-side calls use (TD-10 revision).
+   * In production both env vars name the same public S3 endpoint and the two
+   * clients coincide.
+   */
+  private readonly signer: S3Client;
 
   constructor(
     @Inject(storageConfig.KEY)
     private readonly config: ConfigType<typeof storageConfig>,
   ) {
-    this.client = new S3Client({
+    const common = {
       region: config.region,
-      endpoint: config.endpoint,
       // Single-host MinIO is not addressable virtual-hosted-style without
       // per-bucket DNS, so path style is required locally and harmless on S3.
       forcePathStyle: true,
@@ -52,11 +64,15 @@ export class StorageService implements OnModuleDestroy {
         accessKeyId: config.accessKey,
         secretAccessKey: config.secretKey,
       },
-    });
+    };
+
+    this.client = new S3Client({ ...common, endpoint: config.endpoint });
+    this.signer = new S3Client({ ...common, endpoint: config.publicUrl });
   }
 
   onModuleDestroy(): void {
     this.client.destroy();
+    this.signer.destroy();
   }
 
   private bucketName(bucket: StorageBucket): string {
@@ -105,7 +121,7 @@ export class StorageService implements OnModuleDestroy {
     partNumber: number,
   ): Promise<SignedUrl> {
     const url = await getSignedUrl(
-      this.client,
+      this.signer,
       new UploadPartCommand({
         Bucket: this.bucketName('videos'),
         Key: key,
@@ -183,12 +199,17 @@ export class StorageService implements OnModuleDestroy {
   }
 
   /**
-   * Mints a short-lived GET. Storage answers `Range` requests on this URL with
+   * Mints a short-lived GET **for a client outside the network** — a player or
+   * a browser. Storage answers `Range` requests on this URL with
    * `206 Partial Content` natively, which is what makes playback possible
    * without downloading the whole object.
    *
    * `downloadFilename` turns the same URL into a download by overriding
    * content-disposition — one mechanism serving both capabilities.
+   *
+   * Signed against the public endpoint. For a URL consumed *inside* the
+   * network, such as the worker handing it to FFmpeg, use
+   * `signInternalGetObject`.
    */
   async signGetObject(
     key: string,
@@ -197,7 +218,7 @@ export class StorageService implements OnModuleDestroy {
     const { bucket = 'videos', downloadFilename } = options;
 
     const url = await getSignedUrl(
-      this.client,
+      this.signer,
       new GetObjectCommand({
         Bucket: this.bucketName(bucket),
         Key: key,
@@ -205,6 +226,27 @@ export class StorageService implements OnModuleDestroy {
           ResponseContentDisposition: `attachment; filename="${downloadFilename}"`,
         }),
       }),
+      { expiresIn: this.config.presignTtlSeconds },
+    );
+
+    return { url, expiresIn: this.config.presignTtlSeconds };
+  }
+
+  /**
+   * Mints a short-lived GET **for a consumer inside the network** — today the
+   * worker, which hands the URL to `ffprobe` and `ffmpeg` as an HTTP input.
+   *
+   * It must be signed against the internal endpoint: the worker resolves the
+   * Compose service name, and the public endpoint (`localhost` in local
+   * development) would point FFmpeg at the worker's own container.
+   */
+  async signInternalGetObject(
+    key: string,
+    bucket: StorageBucket = 'videos',
+  ): Promise<SignedUrl> {
+    const url = await getSignedUrl(
+      this.client,
+      new GetObjectCommand({ Bucket: this.bucketName(bucket), Key: key }),
       { expiresIn: this.config.presignTtlSeconds },
     );
 
