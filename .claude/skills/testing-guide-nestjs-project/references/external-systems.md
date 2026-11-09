@@ -14,7 +14,7 @@ How each external system is handled in tests. These strategies were confirmed wi
 ```typescript
 {
   type: 'postgres',
-  host: process.env.DB_HOST ?? 'localhost',
+  host: process.env.DB_HOST ?? 'db',          // Compose service name, never localhost
   port: Number(process.env.DB_PORT ?? 5432),
   username: process.env.DB_USERNAME ?? 'streamtube',
   password: process.env.DB_PASSWORD ?? 'streamtube',
@@ -86,40 +86,50 @@ describe('StorageService (integration)', () => {
 
 ## Message Queue — Real (Docker)
 
-**Strategy:** Real message broker in Docker. The specific technology is TBD per the architecture diagram (likely BullMQ with Redis or RabbitMQ).
+**Strategy:** real broker in Docker — **Redis with BullMQ 6** (`phase-03-videos/TD-14`). Never mock the queue: `redis` is a Compose service and both sides are exercisable for real.
 
-**When the queue technology is chosen, configure:**
-- A queue broker service in `compose.yaml` (e.g., Redis for BullMQ, RabbitMQ for AMQP)
-- Test isolation: use dedicated test queues or clean queues between tests
-- For publisher tests: assert the job is enqueued with correct data
-- For consumer tests: submit a job and assert the processing outcome
+**What this project does NOT use:** `@nestjs/bullmq`. It is `type: module` with its `require` condition pointing at the ESM build, and this project emits CommonJS — so there is no `BullModule`, no `registerQueue` and no `getQueueToken`. `Queue` and `Worker` are hand-written providers (`src/queue/`, `src/videos/worker/`). Reach for `src/config/queue.config.ts` for the connection, never a literal host, and never `localhost` — the host is the Compose service name.
 
-**Setup pattern (BullMQ example):**
-```typescript
-// In test module
-BullModule.forRoot({
-  connection: {
-    host: process.env.REDIS_HOST ?? 'localhost',
-    port: Number(process.env.REDIS_PORT ?? 6379),
-  },
-}),
-BullModule.registerQueue({ name: 'video-processing' }),
-```
+**Test queue namespace.** `src/test/jest-queue-namespace.ts` runs after `dotenv/config` in both Jest configs and rewrites `QUEUE_VIDEO_PROCESSING_NAME` to `<name>-test`. This is load-bearing: the `video-worker` container drains the real queue, so a producer spec asserting `getJobs(['waiting'])` would otherwise race a live consumer. Read the queue name from config so your spec follows the namespace.
+
+**Producer side** — import `QueueModule` and assert what was enqueued:
 
 ```typescript
-describe('VideoService (integration - queue)', () => {
-  it('should enqueue a processing job on upload', async () => {
-    await videoService.upload(videoData);
+const module = await Test.createTestingModule({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true, load: [queueConfig] }),
+    QueueModule,
+  ],
+}).compile();
 
-    const queue = module.get<Queue>(getQueueToken('video-processing'));
-    const jobs = await queue.getJobs(['waiting']);
-    expect(jobs).toHaveLength(1);
-    expect(jobs[0].data).toEqual(
-      expect.objectContaining({ videoId: expect.any(String) }),
-    );
-  });
-});
+const producer = module.get(VideoProcessingQueue);
+await producer.enqueue({ videoId, storageKey });
+
+const waiting = await producer.queue.getJobs(['waiting']);
+expect(waiting).toHaveLength(1);
+expect(waiting[0].data).toEqual({ videoId, storageKey });
 ```
+
+**Consumer side** — register the real `Worker` and observe completion on `QueueEvents`. `compile()` does not run lifecycle hooks and the `Worker` starts in `onModuleInit`, so `await module.init()` is required or nothing drains:
+
+```typescript
+const module = await Test.createTestingModule({
+  imports: [/* config, TypeORM, StorageModule, QueueModule */],
+  providers: [VideoProcessingProcessor, VideoProcessingWorker],
+}).compile();
+await module.init();
+
+const queueEvents = new QueueEvents(producer.queue.name, { connection });
+await queueEvents.waitUntilReady();
+
+const jobId = await producer.enqueue(data);
+// resolve on 'completed' / 'failed' for this jobId, with a timeout
+```
+
+**Isolation and teardown:**
+- `await producer.queue.obliterate({ force: true })` in `beforeEach` — `drain()` only removes waiting and delayed jobs, leaving active, completed and failed ones behind.
+- Close the `QueueEvents` instance explicitly, and `module.close()` to trigger `onModuleDestroy` on the `Queue` and the `Worker`. Without it Jest leaks a handle, and the suite's `--forceExit` would hide the leak rather than report it.
+- `attemptsMade` inside a processor counts the failures already recorded (0, 1, 2 for `attempts: 3`), so the final attempt is where `attemptsMade + 1` reaches `attempts`.
 
 ---
 
@@ -142,7 +152,7 @@ mailpit:
 // In mail module or config
 {
   transport: {
-    host: process.env.SMTP_HOST ?? 'localhost',
+    host: process.env.MAIL_HOST ?? 'mailpit', // Compose service name, never localhost
     port: Number(process.env.SMTP_PORT ?? 1025),
   },
 }
@@ -153,26 +163,25 @@ mailpit:
 describe('MailService (integration)', () => {
   beforeEach(async () => {
     // Clear all captured emails via Mailpit API
-    await fetch('http://localhost:8025/api/v1/messages', { method: 'DELETE' });
+    await clearMailpitMessages(); // src/test/mailpit.ts wraps the REST API
   });
 
   it('should send confirmation email', async () => {
     await mailService.sendConfirmation('user@test.com', 'token-123');
 
     // Query Mailpit API for captured emails
-    const response = await fetch('http://localhost:8025/api/v1/messages');
-    const data = await response.json();
+    const messages = await getMailpitMessages(); // src/test/mailpit.ts
 
-    expect(data.messages).toHaveLength(1);
-    expect(data.messages[0].To[0].Address).toBe('user@test.com');
-    expect(data.messages[0].Subject).toContain('confirm');
+    expect(messages).toHaveLength(1);
+    expect(messages[0].To[0].Address).toBe('user@test.com');
+    expect(messages[0].Subject).toContain('confirm');
   });
 });
 ```
 
 **Key points:**
 - Mailpit captures ALL emails — no mocking, no side effects
-- Use Mailpit's REST API (`http://localhost:8025/api/v1/messages`) to inspect sent emails
+- Use the existing `src/test/mailpit.ts` helper (`getMailpitMessages`, `getMailpitMessage`, `clearMailpitMessages`) rather than calling `fetch` by hand — it resolves the host from `MAIL_HOST` (default `mailpit`). Tests run **inside** the container, so `localhost:8025` would be the container itself, not Mailpit
 - Clear captured emails in `beforeEach` to ensure test isolation
-- Web UI at `http://localhost:8025` for manual debugging
+- Web UI at `http://localhost:8025` for manual debugging **from the host** (the published port)
 - Tests the full SMTP transport path — if the SMTP config is wrong, the test fails
