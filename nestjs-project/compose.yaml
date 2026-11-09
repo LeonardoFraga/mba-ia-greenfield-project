@@ -1,8 +1,10 @@
 services:
   nestjs-api:
-    build: 
+    build:
       context: .
       dockerfile: Dockerfile.dev
+    # Named so the video-worker runs the very same image, built once (TD-04).
+    image: streamtube-nestjs:dev
     ports:
       - 3000:3000
     volumes:
@@ -12,6 +14,10 @@ services:
         condition: service_healthy
       mailpit:
         condition: service_started
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   db:
     image: postgres:17
@@ -33,4 +39,116 @@ services:
       - "1025:1025"
       - "8025:8025"
 
+  # Object storage — MinIO speaks the S3 API, so the same adapter points at S3
+  # in production by configuration alone (phase-03-videos/TD-10).
+  # NOTE on the image: the official `minio/minio` repository is no longer
+  # pullable from Docker Hub, and `quay.io/minio/minio` answers 401. The
+  # Bitnami-packaged build below is the same MinIO server (verified:
+  # DEVELOPMENT.2025-05-24, /minio/health/live returns 200), so TD-10's decision
+  # stands unchanged — only the distribution channel differs.
+  minio:
+    image: bitnamilegacy/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=streamtube
+      - MINIO_ROOT_PASSWORD=streamtube
+      - MINIO_DEFAULT_BUCKETS=videos,thumbnails
+    volumes:
+      - minio-data:/bitnami/minio/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
+  # One-shot bootstrap: two buckets split by access policy, and the lifecycle
+  # rule that reclaims the abandoned multipart uploads the presigned-part
+  # protocol can leave behind (phase-03-videos/TD-03).
+  # Uses the AWS CLI rather than MinIO's `mc`: `minio/mc` is gone from Docker
+  # Hub alongside the server image, and the AWS CLI is both actively maintained
+  # and the same S3 API the application speaks, so the bootstrap is expressed in
+  # the vocabulary the rest of the phase uses.
+  minio-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=streamtube
+      - AWS_SECRET_ACCESS_KEY=streamtube
+      - AWS_DEFAULT_REGION=us-east-1
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        S3="aws --endpoint-url http://minio:9000 s3"
+        S3API="aws --endpoint-url http://minio:9000 s3api"
+        # Idempotent: MINIO_DEFAULT_BUCKETS may have created them already, and a
+        # re-run must not look like a failure in the logs.
+        $$S3 mb s3://videos 2>/dev/null || true
+        $$S3 mb s3://thumbnails 2>/dev/null || true
+        # Thumbnails are public and cacheable: Fases 04 and 07 render grids of
+        # many at once, so public URLs there beat N signing round-trips.
+        $$S3API put-bucket-policy --bucket thumbnails --policy '{
+          "Version": "2012-10-17",
+          "Statement": [{
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::thumbnails/*"
+          }]
+        }'
+        # TD-03 also calls for an AbortIncompleteMultipartUpload lifecycle rule
+        # on the videos bucket. It is NOT set here because this MinIO build does
+        # not implement it, verified three ways: the S3 API rejects a rule whose
+        # only action is AbortIncompleteMultipartUpload ("XML ... did not
+        # validate against our published schema"); combining it with an
+        # expiration action is accepted but MinIO SILENTLY DROPS the abort
+        # element (read-back returns only ExpiredObjectDeleteMarker); and
+        # `mc ilm rule add --help` exposes no multipart/incomplete flag at all.
+        # The rule stays correct for production S3 and belongs in the production
+        # bucket provisioning. Locally, abandoned uploads are reclaimed by the
+        # application-side reaper (SI-03.12), which aborts the multipart through
+        # the SDK for every row stuck in `uploading` past the cutoff.
+        echo "minio-init: buckets and public thumbnail policy ready"
+
+  # Queue broker. BullMQ 6 runs against Redis with hand-written Queue/Worker
+  # providers — no BullModule (phase-03-videos/TD-14). appendonly keeps an
+  # enqueued job alive across a broker restart, which is the durability the
+  # PostgreSQL backend gave for free.
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Same image as the API, different command (TD-04). No ports: the worker has
+  # no HTTP surface.
+  video-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: streamtube-nestjs:dev
+    command: ["npm", "run", "start:worker"]
+    volumes:
+      - .:/home/node/app
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  minio-data:
+  redis-data:

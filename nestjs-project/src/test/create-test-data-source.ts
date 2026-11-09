@@ -1,4 +1,7 @@
-import { DataSource, EntitySchema, MigrationInterface } from 'typeorm';
+import { DataSource, MigrationInterface } from 'typeorm';
+import type { DataSourceOptions } from 'typeorm';
+
+type TestEntities = NonNullable<DataSourceOptions['entities']>;
 
 interface TestDataSourceOptions {
   synchronize?: boolean;
@@ -6,7 +9,7 @@ interface TestDataSourceOptions {
 }
 
 export function createTestDataSource(
-  entities: (Function | string | EntitySchema<any>)[],
+  entities: TestEntities,
   options: TestDataSourceOptions = {},
 ): DataSource {
   const { synchronize = true, migrations } = options;
@@ -24,6 +27,9 @@ export function createTestDataSource(
 }
 
 export async function cleanAllTables(dataSource: DataSource): Promise<void> {
+  // Reverse FK order. `videos` would also go via the ON DELETE CASCADE from
+  // `channels`, but relying on that leaves cleanup implicit.
+  await dataSource.query('DELETE FROM "videos"');
   await dataSource.query('DELETE FROM "refresh_tokens"');
   await dataSource.query('DELETE FROM "verification_tokens"');
   await dataSource.query('DELETE FROM "channels"');
