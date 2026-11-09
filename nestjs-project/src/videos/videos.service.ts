@@ -15,6 +15,7 @@ import {
 } from '../common/exceptions/domain.exception';
 import storageConfig from '../config/storage.config';
 import { VideoProcessingQueue } from '../queue/video-processing.queue';
+import type { SignedUrl } from '../storage/storage.service';
 import { StorageService } from '../storage/storage.service';
 import type { CompleteUploadDto } from './dto/complete-upload.dto';
 import type { InitiateUploadDto } from './dto/initiate-upload.dto';
@@ -25,7 +26,37 @@ import {
   VideoStatus,
 } from './entities/video.entity';
 import { generatePublicId } from './public-id.util';
-import { PUBLIC_ID_COLUMN, PUBLIC_ID_MAX_RETRIES } from './videos.constants';
+import {
+  CONTENT_TYPE_EXTENSIONS,
+  DEFAULT_DOWNLOAD_EXTENSION,
+  PUBLIC_ID_COLUMN,
+  PUBLIC_ID_MAX_RETRIES,
+} from './videos.constants';
+
+/**
+ * Builds a safe download filename from the title. The title is user input, so
+ * it is reduced to a conservative character set before it reaches a
+ * `Content-Disposition` header.
+ */
+function buildDownloadFilename(
+  title: string,
+  contentType: string | null,
+): string {
+  const slug =
+    title
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80)
+      .toLowerCase() || 'video';
+
+  const extension =
+    (contentType && CONTENT_TYPE_EXTENSIONS[contentType]) ??
+    DEFAULT_DOWNLOAD_EXTENSION;
+
+  return `${slug}.${extension}`;
+}
 
 export interface InitiateUploadResult {
   id: string;
@@ -46,6 +77,17 @@ export interface CompleteUploadResult {
   id: string;
   publicId: string;
   status: VideoStatus;
+}
+
+/** Public projection of a ready video. Deliberately omits storage internals. */
+export interface PublicVideo {
+  publicId: string;
+  title: string;
+  durationSeconds: number | null;
+  width: number | null;
+  height: number | null;
+  thumbnailUrl: string | null;
+  createdAt: Date;
 }
 
 @Injectable()
@@ -233,6 +275,67 @@ export class VideosService {
     }
 
     await this.videoRepository.delete({ id: video.id });
+  }
+
+  /** Public metadata for a ready video. */
+  async findPublicByPublicId(publicId: string): Promise<PublicVideo> {
+    const video = await this.findReadyByPublicId(publicId);
+
+    return {
+      publicId: video.public_id,
+      title: video.title,
+      // `numeric` and `bigint` arrive as strings from the driver.
+      durationSeconds:
+        video.duration_seconds === null ? null : Number(video.duration_seconds),
+      width: video.width,
+      height: video.height,
+      thumbnailUrl: video.thumbnail_key
+        ? this.storage.publicThumbnailUrl(video.thumbnail_key)
+        : null,
+      createdAt: video.created_at,
+    };
+  }
+
+  /**
+   * Short-lived presigned GET for playback. Storage answers `Range` requests
+   * on this URL natively, so the API never serves video bytes.
+   */
+  async streamUrl(publicId: string): Promise<SignedUrl> {
+    const video = await this.findReadyByPublicId(publicId);
+    return this.storage.signGetObject(video.storage_key as string);
+  }
+
+  /** The same mechanism with a content-disposition override. */
+  async downloadUrl(publicId: string): Promise<SignedUrl> {
+    const video = await this.findReadyByPublicId(publicId);
+
+    return this.storage.signGetObject(video.storage_key as string, {
+      downloadFilename: buildDownloadFilename(
+        video.title,
+        video.declared_content_type,
+      ),
+    });
+  }
+
+  /**
+   * The single authorization gate for every public route.
+   *
+   * It authorizes on **state, not identity**: a URL is issued only when the
+   * video is `ready`, and every other status answers the same
+   * `VIDEO_NOT_FOUND` as a `publicId` that never existed — so the existence of
+   * a draft never leaks. Keeping it in one place is deliberate: Fase 04 will
+   * tighten this rule when it introduces visibility, and one call site is one
+   * edit instead of three.
+   */
+  private async findReadyByPublicId(publicId: string): Promise<Video> {
+    const video = await this.videoRepository.findOne({
+      where: { public_id: publicId },
+    });
+
+    if (!video || video.status !== VideoStatus.READY || !video.storage_key) {
+      throw new VideoNotFoundException();
+    }
+    return video;
   }
 
   /**

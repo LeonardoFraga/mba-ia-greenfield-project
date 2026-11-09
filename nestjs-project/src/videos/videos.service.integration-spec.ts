@@ -357,4 +357,57 @@ describe('VideosService (integration — real DB + MinIO)', () => {
     const row = await videoRepository.findOneByOrFail({ id: started.id });
     await storage.deleteObject(row.storage_key as string);
   }, 60000);
+  describe('public delivery', () => {
+    /** Seeds a ready video with a real object behind it. */
+    async function seedReady(): Promise<{ publicId: string; key: string }> {
+      const { channel } = await createUserWithChannel();
+      const key = `${channel.id}/ready-${++counter}/source`;
+      await storage.putObject(
+        key,
+        Buffer.alloc(2048, 'r'),
+        'video/mp4',
+        'videos',
+      );
+      const publicId = `rdy${String(counter).padStart(8, '0')}`;
+      await videoRepository.save(
+        videoRepository.create({
+          channel_id: channel.id,
+          title: 'Pronto',
+          public_id: publicId,
+          status: VideoStatus.READY,
+          storage_key: key,
+          declared_content_type: 'video/mp4',
+          size_bytes: '2048',
+        }),
+      );
+      return { publicId, key };
+    }
+
+    it('should issue a stream URL that answers a Range with 206', async () => {
+      const { publicId, key } = await seedReady();
+
+      const { url, expiresIn } = await service.streamUrl(publicId);
+      expect(expiresIn).toBeGreaterThan(0);
+
+      const partial = await fetch(url, { headers: { Range: 'bytes=0-99' } });
+      expect(partial.status).toBe(206);
+      expect(partial.headers.get('content-range')).toBe('bytes 0-99/2048');
+
+      await storage.deleteObject(key);
+    }, 60000);
+
+    it('should issue a download URL that storage serves as an attachment', async () => {
+      const { publicId, key } = await seedReady();
+
+      const { url } = await service.downloadUrl(publicId);
+      const response = await fetch(url);
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-disposition')).toContain(
+        'attachment',
+      );
+
+      await storage.deleteObject(key);
+    }, 60000);
+  });
 });

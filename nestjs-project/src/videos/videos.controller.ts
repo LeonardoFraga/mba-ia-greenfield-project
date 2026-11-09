@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -17,13 +18,16 @@ import {
 } from '@nestjs/swagger';
 import type { JwtPayload } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { ApiErrorEnvelope } from '../common/openapi/api-error-envelope.dto';
+import type { SignedUrl } from '../storage/storage.service';
 import { CompleteUploadDto } from './dto/complete-upload.dto';
 import { InitiateUploadDto } from './dto/initiate-upload.dto';
 import { SignPartsDto } from './dto/sign-parts.dto';
 import type {
   CompleteUploadResult,
   InitiateUploadResult,
+  PublicVideo,
   SignedPart,
 } from './videos.service';
 import { VideosService } from './videos.service';
@@ -166,5 +170,61 @@ export class VideosController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<void> {
     return this.videosService.abortUpload(user.sub, id);
+  }
+
+  // --- Public delivery ---------------------------------------------------
+  // Gated on the video's state, not on the caller's identity: a URL is issued
+  // only for a `ready` video, and every other status answers the same 404 as a
+  // publicId that never existed.
+
+  @Public()
+  @Get(':publicId/stream')
+  @ApiOperation({
+    summary: 'Get a streaming URL',
+    description:
+      'Returns a short-lived presigned URL the player uses as its source. Object storage answers the range requests, so playback never needs the whole file.',
+  })
+  @ApiResponse({ status: 200, description: 'Streaming URL issued' })
+  @ApiResponse({
+    status: 404,
+    description: 'No ready video with this public id',
+    ...envelope,
+  })
+  async stream(@Param('publicId') publicId: string): Promise<SignedUrl> {
+    return this.videosService.streamUrl(publicId);
+  }
+
+  @Public()
+  @Get(':publicId/download')
+  @ApiOperation({
+    summary: 'Get a download URL',
+    description:
+      'The same presigned mechanism as streaming, with a content-disposition override so the browser saves the file.',
+  })
+  @ApiResponse({ status: 200, description: 'Download URL issued' })
+  @ApiResponse({
+    status: 404,
+    description: 'No ready video with this public id',
+    ...envelope,
+  })
+  async download(@Param('publicId') publicId: string): Promise<SignedUrl> {
+    return this.videosService.downloadUrl(publicId);
+  }
+
+  @Public()
+  @Get(':publicId')
+  @ApiOperation({
+    summary: 'Get public video metadata',
+    description:
+      'Public metadata for a ready video, including the permanent thumbnail URL.',
+  })
+  @ApiResponse({ status: 200, description: 'Video metadata' })
+  @ApiResponse({
+    status: 404,
+    description: 'No ready video with this public id',
+    ...envelope,
+  })
+  async findPublic(@Param('publicId') publicId: string): Promise<PublicVideo> {
+    return this.videosService.findPublicByPublicId(publicId);
   }
 }

@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 8/12 completed
+**SIs:** 9/12 completed
 
 ### SI-03.1 — Provisionar object storage e broker no Compose
 - **Status:** completed
@@ -90,9 +90,16 @@
   - `ParseUUIDPipe` nos params: id malformado vira `400` em vez de estourar no driver.
 
 ### SI-03.9 — Expor as rotas públicas de entrega
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 11 unit novos + 2 de integração contra MinIO real + 13 e2e (`test/videos-delivery.e2e-spec.ts`, autorado do spec); suíte completa 260 passing / 34 suites, e2e 82 passing / 5 suites **estável em 2 execuções**, `tsc --noEmit` exit 0, lint exit 0
+- **Observations:**
+  - **Um único gate de autorização**, `findReadyByPublicId`, como a TD-13 pede explicitamente: as três rotas passam por ele, então quando a Fase 04 apertar a regra ao introduzir visibilidade é uma edição e não três.
+  - **Indistinguibilidade verificada, não assumida:** um e2e compara o corpo da resposta de um vídeo `draft` com o de um `publicId` que nunca existiu e exige igualdade. É o que garante que a existência de um rascunho não vaza por diferença de resposta.
+  - **A projeção pública é explícita, não a entidade.** Os testes asseram ausência de `storage_key`, `channel_id` e `processing_error` no corpo — serializar a entidade direto vazaria chave de storage para chamador anônimo.
+  - **Nome de arquivo do download é derivado com sanitização:** o título é entrada de usuário e vai para um header `Content-Disposition`, então é normalizado (acento removido, pontuação colapsada, 80 chars) com extensão vinda do container declarado e fallback `mp4`.
+  - **`durationSeconds` convertido para número** na fronteira: `numeric` chega como string do driver, e o API Contract promete `number | null`.
+  - **As sete rotas conferidas no `openapi.json` exportado**, com a postura certa: as quatro de upload com `security`, as três de entrega sem. Isso fecha a verificação da Authorization Matrix no artefato que o frontend consome.
+  - A linha de integração que o plano pedia (URL emitida respondendo `206`) ficou coberta nos dois níveis — serviço e e2e. Mantive as duas porque a de serviço prova o contrato sem passar por HTTP.
 
 ### SI-03.10 — Montar o container do video worker
 - **Status:** pending

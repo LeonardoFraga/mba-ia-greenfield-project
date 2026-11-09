@@ -23,3 +23,13 @@ export const MAX_PARTS_PER_SIGN_REQUEST = 100;
 
 export const VIDEO_STORAGE_KEY_PREFIX = 'videos';
 export const THUMBNAIL_STORAGE_KEY_PREFIX = 'thumbnails';
+
+/** Filename extension offered on download, per accepted container. */
+export const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'video/x-matroska': 'mkv',
+  'video/webm': 'webm',
+};
+
+export const DEFAULT_DOWNLOAD_EXTENSION = 'mp4';

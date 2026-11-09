@@ -59,6 +59,8 @@ describe('VideosService', () => {
     completeMultipartUpload: jest.Mock;
     headObject: jest.Mock;
     deleteObject: jest.Mock;
+    signGetObject: jest.Mock;
+    publicThumbnailUrl: jest.Mock;
   };
   let processingQueue: { enqueue: jest.Mock };
 
@@ -87,6 +89,12 @@ describe('VideosService', () => {
         contentType: 'video/mp4',
       }),
       deleteObject: jest.fn().mockResolvedValue(undefined),
+      signGetObject: jest
+        .fn()
+        .mockResolvedValue({ url: 'https://storage/signed', expiresIn: 900 }),
+      publicThumbnailUrl: jest
+        .fn()
+        .mockImplementation((key: string) => `https://cdn/thumbnails/${key}`),
     };
     processingQueue = { enqueue: jest.fn().mockResolvedValue('job-1') };
 
@@ -451,6 +459,128 @@ describe('VideosService', () => {
       await expect(
         service.completeUpload(OWNER_ID, 'missing', { parts }),
       ).rejects.toBeInstanceOf(VideoNotFoundException);
+    });
+  });
+  describe('public delivery', () => {
+    const readyVideo = {
+      id: 'video-1',
+      public_id: 'pub1234567x',
+      title: 'Meu Vídeo Incrível!',
+      status: VideoStatus.READY,
+      storage_key: 'video-1/source',
+      declared_content_type: 'video/quicktime',
+      duration_seconds: '12.480',
+      width: 1920,
+      height: 1080,
+      thumbnail_key: 'video-1/thumb.jpg',
+      created_at: new Date('2026-11-08T12:00:00Z'),
+    };
+
+    it('should project public metadata without storage internals', async () => {
+      repository.findOne.mockResolvedValue(readyVideo);
+
+      const result = await service.findPublicByPublicId('pub1234567x');
+
+      expect(result).toEqual({
+        publicId: 'pub1234567x',
+        title: 'Meu Vídeo Incrível!',
+        durationSeconds: 12.48,
+        width: 1920,
+        height: 1080,
+        thumbnailUrl: 'https://cdn/thumbnails/video-1/thumb.jpg',
+        createdAt: readyVideo.created_at,
+      });
+      // Storage internals must not leak to an anonymous caller.
+      expect(result).not.toHaveProperty('storage_key');
+      expect(result).not.toHaveProperty('processing_error');
+    });
+
+    it('should return a null thumbnail when none was generated', async () => {
+      repository.findOne.mockResolvedValue({
+        ...readyVideo,
+        thumbnail_key: null,
+      });
+
+      const result = await service.findPublicByPublicId('pub1234567x');
+
+      expect(result.thumbnailUrl).toBeNull();
+    });
+
+    it('should issue a presigned URL for streaming', async () => {
+      repository.findOne.mockResolvedValue(readyVideo);
+
+      const result = await service.streamUrl('pub1234567x');
+
+      expect(result).toEqual({ url: 'https://storage/signed', expiresIn: 900 });
+      // No content-disposition override on the streaming variant.
+      expect(storage.signGetObject).toHaveBeenCalledWith('video-1/source');
+    });
+
+    it('should derive a safe download filename from the title', async () => {
+      repository.findOne.mockResolvedValue(readyVideo);
+
+      await service.downloadUrl('pub1234567x');
+
+      expect(storage.signGetObject).toHaveBeenCalledWith('video-1/source', {
+        // Accents stripped, punctuation collapsed, extension from the
+        // declared container.
+        downloadFilename: 'meu-video-incrivel.mov',
+      });
+    });
+
+    it('should fall back to mp4 when the container is unknown', async () => {
+      repository.findOne.mockResolvedValue({
+        ...readyVideo,
+        title: '???',
+        declared_content_type: null,
+      });
+
+      await service.downloadUrl('pub1234567x');
+
+      expect(storage.signGetObject).toHaveBeenCalledWith('video-1/source', {
+        downloadFilename: 'video.mp4',
+      });
+    });
+
+    it.each([
+      VideoStatus.DRAFT,
+      VideoStatus.UPLOADING,
+      VideoStatus.PROCESSING,
+      VideoStatus.FAILED,
+    ])('should hide a video whose status is %s', async (status) => {
+      repository.findOne.mockResolvedValue({ ...readyVideo, status });
+
+      await expect(
+        service.findPublicByPublicId('pub1234567x'),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
+      await expect(service.streamUrl('pub1234567x')).rejects.toBeInstanceOf(
+        VideoNotFoundException,
+      );
+      await expect(service.downloadUrl('pub1234567x')).rejects.toBeInstanceOf(
+        VideoNotFoundException,
+      );
+
+      // Nothing is signed for a video that is not ready.
+      expect(storage.signGetObject).not.toHaveBeenCalled();
+    });
+
+    it('should hide a publicId that does not exist', async () => {
+      repository.findOne.mockResolvedValue(null);
+
+      await expect(
+        service.findPublicByPublicId('missing1234'),
+      ).rejects.toBeInstanceOf(VideoNotFoundException);
+    });
+
+    it('should hide a ready video that somehow has no storage key', async () => {
+      repository.findOne.mockResolvedValue({
+        ...readyVideo,
+        storage_key: null,
+      });
+
+      await expect(service.streamUrl('pub1234567x')).rejects.toBeInstanceOf(
+        VideoNotFoundException,
+      );
     });
   });
 });
