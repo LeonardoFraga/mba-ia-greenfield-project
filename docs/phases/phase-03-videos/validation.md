@@ -5,7 +5,7 @@ status: clean
 issue_count: 0
 sources_mtime:
   docs/phases/phase-03-videos/context.md: "2026-11-08T20:02:50-03:00"
-  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-08T20:02:26-03:00"
+  docs/decisions/technical-decisions-phase-03-videos.md: "2026-11-09T18:58:48-03:00"
 issues:
   - id: IC-1
     status: resolved
@@ -111,8 +111,10 @@ _None._
 
 - **2026-11-08 — `phase-03-videos/TD-03`** gained a `**Revisions:**` entry scoping the `AbortIncompleteMultipartUpload` lifecycle rule to production S3, after the local MinIO build was verified not to implement it. The `sources_mtime` above was refreshed to match. This opens **no new issue**: the chosen option is unchanged, no capability loses coverage, and the cleanup mechanism moves to `SI-03.12`'s reaper, which the plan already contained. The `clean` verdict therefore still holds — but note that the authority for that verdict is `/plan-validate`, and this entry records a refresh applied during `/implement`, not a fresh run of the checks. Re-run `/plan-validate 03` if an independent reconfirmation is wanted.
 
+- **2026-11-09 — `phase-03-videos/TD-10`** gained a `**Revisions:**` entry splitting the signing endpoint from the server-side endpoint, after client-facing presigned URLs were found to carry the Compose service name (`minio:9000`) and therefore to be unusable outside Docker — SigV4 covers the `Host` header, so the host cannot be rewritten after signing. The `sources_mtime` above was refreshed to match. This opens **no new issue**: the chosen option (single S3 adapter, real MinIO in tests) is unchanged, and the revision makes the implementation *match* obligations already recorded on `TD-02` (the browser `PUT`s parts directly) and `TD-07` (the player consumes the presigned GET as its `src`) rather than altering any decision. No capability loses coverage; the regression guard is a unit test, because the integration suites run inside the container where the public and internal endpoints coincide and so cannot distinguish the two paths. As with the entry above, the authority for the `clean` verdict is `/plan-validate`; this records a refresh applied during implementation, not a fresh run of the checks.
+
 ## Deferred follow-up (not an open issue)
 
-Correcting `.claude/skills/testing-guide-nestjs-project/references/external-systems.md` is tracked as a **separate task** per `CLAUDE.md` § Scope Limits, since `.claude/` is provided foundation outside this phase's deliverable structure. Scope of that task: § "Object Storage" to MinIO, a queue producer/consumer row in the § 3 artifact table, and the § 2 `BullModule.registerQueue()` example. Note that `TD-14` changed what is wrong with § "Message Queue" — the placeholder's assumption of **Redis is now correct**, while its `BullModule.forRoot` setup example and `getQueueToken` usage remain inapplicable, because `TD-14` keeps `Queue` and `Worker` as hand-written providers with no `BullModule`.
+~~Correcting `.claude/skills/testing-guide-nestjs-project/references/external-systems.md` is tracked as a **separate task**~~ — **done on 2026-11-09**, after the phase closed. It was tracked as separate work per `CLAUDE.md` § Scope Limits, since `.claude/` is provided foundation outside this phase's deliverable structure, but was carried out because documentation of the AI foundation contradicting the code is an automatic-failure item in the challenge brief. Scope of that task: § "Object Storage" to MinIO, a queue producer/consumer row in the § 3 artifact table, and the § 2 `BullModule.registerQueue()` example. Note that `TD-14` changed what is wrong with § "Message Queue" — the placeholder's assumption of **Redis is now correct**, while its `BullModule.forRoot` setup example and `getQueueToken` usage remain inapplicable, because `TD-14` keeps `Queue` and `Worker` as hand-written providers with no `BullModule`.
 
 None of this gates `/plan-build`: the authoritative instruction for `/implement` is the phase-local override table in `context.md`'s `## Testing Requirements`, backed by the `**Revisions:**` entries on `TD-10` (storage) and `TD-11` (queue).
