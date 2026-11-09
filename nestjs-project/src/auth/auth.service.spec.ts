@@ -3,7 +3,7 @@ import * as crypto from 'crypto';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import authConfig from '../config/auth.config';
 import {
   EmailAlreadyExistsException,
@@ -13,7 +13,10 @@ import {
   TokenExpiredException,
   TokenReuseDetectedException,
 } from '../common/exceptions/domain.exception';
+import { Channel } from '../channels/entities/channel.entity';
 import { MailService } from '../mail/mail.service';
+import { fixture } from '../test/fixtures';
+import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
 import { AuthService } from './auth.service';
 import { RefreshToken } from './entities/refresh-token.entity';
@@ -92,10 +95,12 @@ describe('AuthService — register', () => {
   });
 
   it('throws EmailAlreadyExistsException when email is already registered', async () => {
-    usersService.findByEmail.mockResolvedValue({
-      id: 'u1',
-      email: 'test@example.com',
-    } as any);
+    usersService.findByEmail.mockResolvedValue(
+      fixture<User>({
+        id: 'u1',
+        email: 'test@example.com',
+      }),
+    );
 
     await expect(
       authService.register({
@@ -107,12 +112,16 @@ describe('AuthService — register', () => {
 
   it('hashes the password before creating the user', async () => {
     usersService.findByEmail.mockResolvedValue(null);
-    usersService.createUserWithChannel.mockResolvedValue({
-      id: 'u1',
-      email: 'new@example.com',
-      channel: { name: 'new' },
-    } as any);
-    verificationTokenRepository.create.mockReturnValue({} as any);
+    usersService.createUserWithChannel.mockResolvedValue(
+      fixture<User>({
+        id: 'u1',
+        email: 'new@example.com',
+        channel: fixture<Channel>({ name: 'new' }),
+      }),
+    );
+    verificationTokenRepository.create.mockReturnValue(
+      fixture<VerificationToken>({}),
+    );
 
     await authService.register({
       email: 'new@example.com',
@@ -126,12 +135,16 @@ describe('AuthService — register', () => {
 
   it('calls createUserWithChannel with the correct email', async () => {
     usersService.findByEmail.mockResolvedValue(null);
-    usersService.createUserWithChannel.mockResolvedValue({
-      id: 'u1',
-      email: 'new@example.com',
-      channel: { name: 'new' },
-    } as any);
-    verificationTokenRepository.create.mockReturnValue({} as any);
+    usersService.createUserWithChannel.mockResolvedValue(
+      fixture<User>({
+        id: 'u1',
+        email: 'new@example.com',
+        channel: fixture<Channel>({ name: 'new' }),
+      }),
+    );
+    verificationTokenRepository.create.mockReturnValue(
+      fixture<VerificationToken>({}),
+    );
 
     await authService.register({
       email: 'new@example.com',
@@ -146,11 +159,13 @@ describe('AuthService — register', () => {
 
   it('stores a verification token with EMAIL_CONFIRMATION type', async () => {
     usersService.findByEmail.mockResolvedValue(null);
-    usersService.createUserWithChannel.mockResolvedValue({
-      id: 'u1',
-      email: 'new@example.com',
-      channel: { name: 'new' },
-    } as any);
+    usersService.createUserWithChannel.mockResolvedValue(
+      fixture<User>({
+        id: 'u1',
+        email: 'new@example.com',
+        channel: fixture<Channel>({ name: 'new' }),
+      }),
+    );
     const createdToken = {
       type: VerificationTokenType.EMAIL_CONFIRMATION,
     } as VerificationToken;
@@ -172,12 +187,16 @@ describe('AuthService — register', () => {
 
   it('sends a confirmation email with the raw token', async () => {
     usersService.findByEmail.mockResolvedValue(null);
-    usersService.createUserWithChannel.mockResolvedValue({
-      id: 'u1',
-      email: 'new@example.com',
-      channel: { name: 'mynick' },
-    } as any);
-    verificationTokenRepository.create.mockReturnValue({} as any);
+    usersService.createUserWithChannel.mockResolvedValue(
+      fixture<User>({
+        id: 'u1',
+        email: 'new@example.com',
+        channel: fixture<Channel>({ name: 'mynick' }),
+      }),
+    );
+    verificationTokenRepository.create.mockReturnValue(
+      fixture<VerificationToken>({}),
+    );
 
     await authService.register({
       email: 'new@example.com',
@@ -193,12 +212,16 @@ describe('AuthService — register', () => {
 
   it('returns the user id and email', async () => {
     usersService.findByEmail.mockResolvedValue(null);
-    usersService.createUserWithChannel.mockResolvedValue({
-      id: 'u1',
-      email: 'new@example.com',
-      channel: { name: 'new' },
-    } as any);
-    verificationTokenRepository.create.mockReturnValue({} as any);
+    usersService.createUserWithChannel.mockResolvedValue(
+      fixture<User>({
+        id: 'u1',
+        email: 'new@example.com',
+        channel: fixture<Channel>({ name: 'new' }),
+      }),
+    );
+    verificationTokenRepository.create.mockReturnValue(
+      fixture<VerificationToken>({}),
+    );
 
     const result = await authService.register({
       email: 'new@example.com',
@@ -281,14 +304,14 @@ describe('AuthService — confirm', () => {
       .createHash('sha256')
       .update(rawToken)
       .digest('hex');
-    const user = { id: 'u1', is_confirmed: false } as any;
-    const record = {
+    const user = fixture<User>({ id: 'u1', is_confirmed: false });
+    const record = fixture<VerificationToken>({
       token_hash: tokenHash,
       type: VerificationTokenType.EMAIL_CONFIRMATION,
       used_at: null,
       expires_at: new Date(Date.now() + 60_000),
       user,
-    } as any;
+    });
 
     verificationTokenRepository.findOne.mockResolvedValue(record);
 
@@ -310,13 +333,13 @@ describe('AuthService — confirm', () => {
 
   it('throws TokenExpiredException when token is expired', async () => {
     const rawToken = 'b'.repeat(64);
-    const record = {
+    const record = fixture<VerificationToken>({
       token_hash: crypto.createHash('sha256').update(rawToken).digest('hex'),
       type: VerificationTokenType.EMAIL_CONFIRMATION,
       used_at: null,
       expires_at: new Date(Date.now() - 1000),
-      user: { id: 'u1', is_confirmed: false },
-    } as any;
+      user: fixture<User>({ id: 'u1', is_confirmed: false }),
+    });
 
     verificationTokenRepository.findOne.mockResolvedValue(record);
 
@@ -352,11 +375,13 @@ describe('AuthService — resendConfirmation', () => {
   });
 
   it('returns silently when user is already confirmed', async () => {
-    usersService.findByEmailWithChannel.mockResolvedValue({
-      id: 'u1',
-      is_confirmed: true,
-      channel: { name: 'nick' },
-    } as any);
+    usersService.findByEmailWithChannel.mockResolvedValue(
+      fixture<User>({
+        id: 'u1',
+        is_confirmed: true,
+        channel: fixture<Channel>({ name: 'nick' }),
+      }),
+    );
 
     await expect(
       authService.resendConfirmation('confirmed@example.com'),
@@ -365,12 +390,12 @@ describe('AuthService — resendConfirmation', () => {
   });
 
   it('invalidates old tokens and sends a new confirmation email', async () => {
-    const user = {
+    const user = fixture<User>({
       id: 'u1',
       email: 'user@example.com',
       is_confirmed: false,
-      channel: { name: 'nick' },
-    } as any;
+      channel: fixture<Channel>({ name: 'nick' }),
+    });
     usersService.findByEmailWithChannel.mockResolvedValue(user);
 
     const qbMock = {
@@ -381,9 +406,11 @@ describe('AuthService — resendConfirmation', () => {
       execute: jest.fn().mockResolvedValue(undefined),
     };
     verificationTokenRepository.createQueryBuilder.mockReturnValue(
-      qbMock as any,
+      qbMock as unknown as SelectQueryBuilder<VerificationToken>,
     );
-    verificationTokenRepository.create.mockReturnValue({} as any);
+    verificationTokenRepository.create.mockReturnValue(
+      fixture<VerificationToken>({}),
+    );
 
     await authService.resendConfirmation('user@example.com');
 
@@ -431,12 +458,14 @@ describe('AuthService — login', () => {
   });
 
   it('throws InvalidCredentialsException when password is wrong', async () => {
-    usersService.findByEmail.mockResolvedValue({
-      id: 'u1',
-      email: 'user@example.com',
-      password: hashedTestPassword,
-      is_confirmed: true,
-    } as any);
+    usersService.findByEmail.mockResolvedValue(
+      fixture<User>({
+        id: 'u1',
+        email: 'user@example.com',
+        password: hashedTestPassword,
+        is_confirmed: true,
+      }),
+    );
 
     await expect(
       authService.login({
@@ -447,12 +476,14 @@ describe('AuthService — login', () => {
   });
 
   it('throws EmailNotConfirmedException when user is not confirmed', async () => {
-    usersService.findByEmail.mockResolvedValue({
-      id: 'u1',
-      email: 'user@example.com',
-      password: hashedTestPassword,
-      is_confirmed: false,
-    } as any);
+    usersService.findByEmail.mockResolvedValue(
+      fixture<User>({
+        id: 'u1',
+        email: 'user@example.com',
+        password: hashedTestPassword,
+        is_confirmed: false,
+      }),
+    );
 
     await expect(
       authService.login({
@@ -463,12 +494,14 @@ describe('AuthService — login', () => {
   });
 
   it('returns access_token and refresh_token on valid credentials', async () => {
-    usersService.findByEmail.mockResolvedValue({
-      id: 'u1',
-      email: 'user@example.com',
-      password: hashedTestPassword,
-      is_confirmed: true,
-    } as any);
+    usersService.findByEmail.mockResolvedValue(
+      fixture<User>({
+        id: 'u1',
+        email: 'user@example.com',
+        password: hashedTestPassword,
+        is_confirmed: true,
+      }),
+    );
 
     const result = await authService.login({
       email: 'user@example.com',
@@ -487,7 +520,7 @@ describe('AuthService — refresh', () => {
   let authService: AuthService;
   let refreshTokenRepository: jest.Mocked<Repository<RefreshToken>>;
 
-  const mockUser = { id: 'u1', email: 'user@example.com' } as any;
+  const mockUser = fixture<User>({ id: 'u1', email: 'user@example.com' });
   const rawToken = 'a'.repeat(64);
   const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
 
@@ -506,14 +539,14 @@ describe('AuthService — refresh', () => {
   });
 
   it('throws TokenExpiredException when token is expired', async () => {
-    const record = {
+    const record = fixture<RefreshToken>({
       token_hash: tokenHash,
       family: 'family-uuid',
       user_id: 'u1',
       user: mockUser,
       expires_at: new Date(Date.now() - 1000),
       revoked_at: null,
-    } as any;
+    });
     refreshTokenRepository.findOne.mockResolvedValue(record);
 
     await expect(authService.refresh(rawToken)).rejects.toThrow(
@@ -522,16 +555,16 @@ describe('AuthService — refresh', () => {
   });
 
   it('rotates token: revokes old, persists new, returns both tokens', async () => {
-    const record = {
+    const record = fixture<RefreshToken>({
       token_hash: tokenHash,
       family: 'family-uuid',
       user_id: 'u1',
       user: mockUser,
       expires_at: new Date(Date.now() + 60_000),
       revoked_at: null,
-    } as any;
+    });
     refreshTokenRepository.findOne.mockResolvedValue(record);
-    refreshTokenRepository.create.mockReturnValue({} as any);
+    refreshTokenRepository.create.mockReturnValue(fixture<RefreshToken>({}));
 
     const result = await authService.refresh(rawToken);
 
@@ -547,14 +580,14 @@ describe('AuthService — refresh', () => {
 
   it('returns new access token without revoking family when reuse is within grace period', async () => {
     const revokedAt = new Date(Date.now() - 5_000);
-    const record = {
+    const record = fixture<RefreshToken>({
       token_hash: tokenHash,
       family: 'family-uuid',
       user_id: 'u1',
       user: mockUser,
       expires_at: new Date(Date.now() + 60_000),
       revoked_at: revokedAt,
-    } as any;
+    });
     refreshTokenRepository.findOne.mockResolvedValue(record);
 
     const result = await authService.refresh(rawToken);
@@ -566,14 +599,14 @@ describe('AuthService — refresh', () => {
 
   it('revokes entire family and throws TokenReuseDetectedException beyond grace period', async () => {
     const revokedAt = new Date(Date.now() - 15_000);
-    const record = {
+    const record = fixture<RefreshToken>({
       token_hash: tokenHash,
       family: 'family-uuid',
       user_id: 'u1',
       user: mockUser,
       expires_at: new Date(Date.now() + 60_000),
       revoked_at: revokedAt,
-    } as any;
+    });
     refreshTokenRepository.findOne.mockResolvedValue(record);
 
     const qbMock = {
@@ -583,7 +616,9 @@ describe('AuthService — refresh', () => {
       andWhere: jest.fn().mockReturnThis(),
       execute: jest.fn().mockResolvedValue(undefined),
     };
-    refreshTokenRepository.createQueryBuilder.mockReturnValue(qbMock as any);
+    refreshTokenRepository.createQueryBuilder.mockReturnValue(
+      qbMock as unknown as SelectQueryBuilder<RefreshToken>,
+    );
 
     await expect(authService.refresh(rawToken)).rejects.toThrow(
       TokenReuseDetectedException,
@@ -614,11 +649,15 @@ describe('AuthService — logout', () => {
       andWhere: jest.fn().mockReturnThis(),
       execute: jest.fn().mockResolvedValue(undefined),
     };
-    refreshTokenRepository.createQueryBuilder.mockReturnValue(qbMock as any);
+    refreshTokenRepository.createQueryBuilder.mockReturnValue(
+      qbMock as unknown as SelectQueryBuilder<RefreshToken>,
+    );
 
     await authService.logout('user-id-123');
 
-    expect(qbMock.set).toHaveBeenCalledWith({ revoked_at: expect.any(Date) });
+    expect(qbMock.set).toHaveBeenCalledWith({
+      revoked_at: expect.any(Date) as Date,
+    });
     expect(qbMock.where).toHaveBeenCalledWith('user_id = :userId', {
       userId: 'user-id-123',
     });
@@ -653,11 +692,11 @@ describe('AuthService — forgotPassword', () => {
   });
 
   it('invalidates previous reset tokens and sends a reset email', async () => {
-    const user = {
+    const user = fixture<User>({
       id: 'u1',
       email: 'user@example.com',
-      channel: { name: 'nick' },
-    } as any;
+      channel: fixture<Channel>({ name: 'nick' }),
+    });
     usersService.findByEmailWithChannel.mockResolvedValue(user);
 
     const qbMock = {
@@ -668,9 +707,11 @@ describe('AuthService — forgotPassword', () => {
       execute: jest.fn().mockResolvedValue(undefined),
     };
     verificationTokenRepository.createQueryBuilder.mockReturnValue(
-      qbMock as any,
+      qbMock as unknown as SelectQueryBuilder<VerificationToken>,
     );
-    verificationTokenRepository.create.mockReturnValue({} as any);
+    verificationTokenRepository.create.mockReturnValue(
+      fixture<VerificationToken>({}),
+    );
 
     await authService.forgotPassword('user@example.com');
 
@@ -718,13 +759,13 @@ describe('AuthService — resetPassword', () => {
 
   it('throws TokenExpiredException when token is expired', async () => {
     const rawToken = 'c'.repeat(64);
-    const record = {
+    const record = fixture<VerificationToken>({
       token_hash: crypto.createHash('sha256').update(rawToken).digest('hex'),
       type: VerificationTokenType.PASSWORD_RESET,
       used_at: null,
       expires_at: new Date(Date.now() - 1000),
-      user: { id: 'u1', password: 'oldhash' },
-    } as any;
+      user: fixture<User>({ id: 'u1', password: 'oldhash' }),
+    });
     verificationTokenRepository.findOne.mockResolvedValue(record);
 
     await expect(
@@ -734,14 +775,14 @@ describe('AuthService — resetPassword', () => {
 
   it('hashes the new password, marks token used, and revokes refresh tokens', async () => {
     const rawToken = 'd'.repeat(64);
-    const user = { id: 'u1', password: 'oldhash' } as any;
-    const record = {
+    const user = fixture<User>({ id: 'u1', password: 'oldhash' });
+    const record = fixture<VerificationToken>({
       token_hash: crypto.createHash('sha256').update(rawToken).digest('hex'),
       type: VerificationTokenType.PASSWORD_RESET,
       used_at: null,
       expires_at: new Date(Date.now() + 60_000),
       user,
-    } as any;
+    });
     verificationTokenRepository.findOne.mockResolvedValue(record);
 
     const qbMock = {
@@ -751,7 +792,9 @@ describe('AuthService — resetPassword', () => {
       andWhere: jest.fn().mockReturnThis(),
       execute: jest.fn().mockResolvedValue(undefined),
     };
-    refreshTokenRepository.createQueryBuilder.mockReturnValue(qbMock as any);
+    refreshTokenRepository.createQueryBuilder.mockReturnValue(
+      qbMock as unknown as SelectQueryBuilder<RefreshToken>,
+    );
 
     await authService.resetPassword(rawToken, 'newplaintext');
 

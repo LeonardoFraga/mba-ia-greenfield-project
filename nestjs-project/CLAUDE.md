@@ -13,6 +13,9 @@ docker compose ps   # all services must show status "running"
 Then verify each infrastructure service is actually ready to accept connections — not just running:
 
 - **PostgreSQL:** `docker compose exec db pg_isready -U streamtube` — expect `accepting connections`
+- **MinIO:** `docker compose exec minio curl -fsS http://localhost:9000/minio/health/live` — exit code `0`
+- **Redis:** `docker compose exec redis redis-cli ping` — expect `PONG`
+- **Video worker:** `docker compose logs video-worker | grep "worker listening"` — the line naming the queue and the Redis host is what proves the consumer is attached. A `video-worker` that keeps restarting means it crashed on boot; read its logs before anything else.
 
 Only start the NestJS dev server (`npm run start:dev`) when the user **explicitly** asks to run the application — never as part of "start the environment".
 
@@ -33,7 +36,12 @@ docker compose exec nestjs-api npm run start:dev
 
 Services:
 - `nestjs-api` — NestJS API, port `3000`
-- `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube`
+- `db` — PostgreSQL 17, port `5432`, database `streamtube`, user/password `streamtube`. Data lives in the `db-data` volume, so it survives `docker compose down` and any recreation of the container
+- `mailpit` — SMTP sink, SMTP on `1025`, web UI on `8025`
+- `minio` — S3-compatible object storage, API on `9000`, console on `9001`, key/secret `streamtube`
+- `minio-init` — one-shot: creates the `videos` and `thumbnails` buckets and makes `thumbnails` publicly readable, then exits `0`. An exited `minio-init` is the expected steady state, not a failure.
+- `redis` — BullMQ broker, port `6379`, started with `--appendonly yes` so an enqueued job survives a restart
+- `video-worker` — the **same image** as `nestjs-api`, started with `npm run start:worker`. No ports: it has no HTTP surface, it consumes the queue.
 
 All verification and teardown commands run on the **host machine**:
 
@@ -48,8 +56,12 @@ docker compose exec db pg_isready -U streamtube
 docker compose logs nestjs-api
 docker compose logs db
 
-# Tear down the entire environment
+# Tear down the entire environment (named volumes are kept, so the database,
+# MinIO objects and queued jobs survive)
 docker compose down
+
+# Tear down AND discard all persisted data — migrations and seeds must be re-run
+docker compose down -v
 ```
 
 ## Commands
@@ -137,6 +149,49 @@ MAIL_FROM="StreamTube <noreply@streamtube.local>"
 ```
 
 Whenever possible, prefer storing only the bare address in `.env` and composing display names in code (e.g., in `mail.config.ts`) so the file stays shell-safe.
+
+## Environment Variables (Fase 03)
+
+Storage and queue keys. `STORAGE_ENDPOINT`, `STORAGE_ACCESS_KEY`,
+`STORAGE_SECRET_KEY`, `STORAGE_BUCKET_VIDEOS`, `STORAGE_BUCKET_THUMBNAILS` and
+`STORAGE_PUBLIC_URL` are **required** — the app refuses to boot without them,
+by `src/config/env.validation.ts`. The rest have defaults.
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `STORAGE_ENDPOINT` | — | S3 API endpoint. `http://minio:9000` in Compose |
+| `STORAGE_REGION` | `us-east-1` | |
+| `STORAGE_ACCESS_KEY` / `STORAGE_SECRET_KEY` | — | |
+| `STORAGE_BUCKET_VIDEOS` | — | Private bucket; every read is a presigned GET |
+| `STORAGE_BUCKET_THUMBNAILS` | — | Public, cacheable bucket |
+| `STORAGE_PUBLIC_URL` | — | **The one host that must not be a Compose service name** — it is handed to a browser, so `http://localhost:9000` locally |
+| `STORAGE_PRESIGN_TTL_SECONDS` | `900` | Presigned URL lifetime |
+| `STORAGE_UPLOAD_PART_SIZE_BYTES` | `52428800` | 50MB: a 10GB file is 200 parts, well under the 10,000 cap |
+| `STORAGE_MAX_UPLOAD_BYTES` | `10737418240` | 10GB ceiling, enforced at initiate and verified at complete |
+| `STORAGE_ABANDONED_UPLOAD_CUTOFF_HOURS` | `24` | How long a row may sit at `uploading` before the reaper collects it |
+| `REDIS_HOST` / `REDIS_PORT` | `redis` / `6379` | |
+| `QUEUE_VIDEO_PROCESSING_NAME` | `video-processing` | Jest rewrites this to `…-test` (see below) |
+| `QUEUE_JOB_ATTEMPTS` | `3` | Exhausting it is what lets a row reach `failed` |
+| `QUEUE_JOB_BACKOFF_DELAY_MS` | `1000` | Exponential |
+
+`FFMPEG_VERSION` is a Docker build `ARG` in `Dockerfile.dev` (not an env var),
+pinned to the exact apt candidate so an image rebuild cannot silently change
+the FFmpeg the worker runs.
+
+## Test Queue Namespace
+
+`src/test/jest-queue-namespace.ts` runs after `dotenv/config` in both Jest
+configs and rewrites `QUEUE_VIDEO_PROCESSING_NAME` to `<name>-test`.
+
+This is not cosmetic: the `video-worker` container drains the real queue, so
+without it a producer spec asserting `getJobs(['waiting'])` races a live
+consumer and fails for a reason that has nothing to do with the code. Do not
+remove it, and when adding a queue-touching spec do not hardcode a queue name —
+read it from `src/config/queue.config.ts` so it follows the namespace.
+
+Note the path difference: `package.json`'s jest config has `rootDir: "src"`, so
+the entry is `<rootDir>/test/...`, while `test/jest-e2e.json` resolves
+`<rootDir>` to its **own directory**, so the entry is `<rootDir>/../src/test/...`.
 
 ## Build Assets
 

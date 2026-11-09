@@ -25,6 +25,19 @@ export default tseslint.config(
     },
   },
   {
+    // `expect(someMock.method)` is the idiomatic Jest assertion, but the base
+    // rule cannot distinguish a `jest.Mocked<T>` method reference from a real
+    // unbound-`this` leak. Scoped off for test files only.
+    files: [
+      '**/*.spec.ts',
+      '**/*.integration-spec.ts',
+      '**/*.e2e-spec.ts',
+    ],
+    rules: {
+      '@typescript-eslint/unbound-method': 'off',
+    },
+  },
+  {
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       '@typescript-eslint/no-floating-promises': 'warn',
