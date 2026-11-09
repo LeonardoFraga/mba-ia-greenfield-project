@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+    # Named so the video-worker runs the very same image, built once (TD-04).
+    image: streamtube-nestjs:dev
     ports:
       - 3000:3000
     volumes:
@@ -128,6 +130,24 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # Same image as the API, different command (TD-04). No ports: the worker has
+  # no HTTP surface.
+  video-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: streamtube-nestjs:dev
+    command: ["npm", "run", "start:worker"]
+    volumes:
+      - .:/home/node/app
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   minio-data:

@@ -308,8 +308,8 @@ As linhas de E2E ficam de fora desta tabela de propósito — ver `**Test Specs:
 
 **Acceptance criteria:**
 
-- `docker compose exec video-worker ffmpeg -version` e `ffprobe -version` respondem com a versão pinada
-- `docker compose logs video-worker` mostra o contexto Nest subindo e o worker conectando no Redis
+- `ffmpeg -version` e `ffprobe -version` na imagem respondem com a versão pinada
+- `docker compose logs video-worker` mostra o contexto Nest subindo até `Video worker context started`, e o container encerra com exit 0 — sem o `Worker` do BullMQ nada segura o event loop, então **manter o processo vivo e conectado ao Redis é AC do SI-03.11**, não deste
 - `video-worker` e `nestjs-api` rodam a partir da mesma imagem construída uma vez
 - O worker não expõe porta HTTP
 
@@ -345,6 +345,7 @@ As linhas de E2E ficam de fora desta tabela de propósito — ver `**Test Specs:
 - Um arquivo não-vídeo esgota as 3 tentativas e a linha termina `failed` com `processing_error` não vazio
 - Rodar o mesmo job duas vezes converge para a mesma linha, sem duplicar thumbnail
 - `worker.close()` no `afterEach` não deixa handle aberto no Jest
+- `docker compose ps` mostra `video-worker` com status `running` de forma sustentada, e seus logs mostram o `Worker` conectado ao Redis (AC herdada do SI-03.10, que não podia cumpri-la antes de o `Worker` existir)
 
 ---
 

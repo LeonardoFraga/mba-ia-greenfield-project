@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 9/12 completed
+**SIs:** 10/12 completed
 
 ### SI-03.1 — Provisionar object storage e broker no Compose
 - **Status:** completed
@@ -102,9 +102,14 @@
   - A linha de integração que o plano pedia (URL emitida respondendo `206`) ficou coberta nos dois níveis — serviço e e2e. Mantive as duas porque a de serviço prova o contrato sem passar por HTTP.
 
 ### SI-03.10 — Montar o container do video worker
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 2 passing em `src/videos/worker/` (compilation real contra o `db` + guarda de que o `AppModule` não entra no worker); suíte completa 262 passing / 35 suites, e2e 82 passing / 5 suites, `tsc --noEmit` exit 0, lint exit 0
+- **Observations:**
+  - **FFmpeg pinado em `7:5.1.9-0+deb12u1`** (candidato do apt no Debian 12 bookworm, que é a base), via `ARG` para ficar trivial de bumpar. Verificado em runtime: `ffmpeg -version` e `ffprobe -version` respondem `5.1.9-0+deb12u1`. Trade-off documentado no próprio Dockerfile: pin exato de apt quebra o build quando o Debian rola atualização de segurança e remove a versão antiga do repo — é o preço da reprodutibilidade que a TD-05 pede.
+  - **`DatabaseModule` extraído** para que a API e o worker compartilhem uma única definição de conexão TypeORM. Duas cópias do factory divergiriam na primeira mudança de opção. Isso tocou o `app.module.ts`, e o **lint pegou os dois imports que ficaram órfãos** (`ConfigType`, `TypeOrmModule`) — resíduo que o `tsc` não acusa porque `noUnusedLocals` está desligado.
+  - **O worker precisa do fecho de relações, não só da sua entidade.** Com `forFeature([Video])` o contexto crashava em `Entity metadata for Video#channel was not found`: o `autoLoadEntities` só descobre o que algum módulo registra, e o TypeORM não monta `Video#channel` sem `Channel`, nem `Channel#user` sem `User`. Registrado `[Video, Channel, User]`.
+  - **O container sobe, loga `Video worker context started` e encerra com exit 0** — e isso está correto para este SI: sem o `Worker` do BullMQ nada segura o event loop. Em vez de inventar keep-alive ou dar a AC por cumprida, movi a exigência de "processo vivo e conectado ao Redis" para o SI-03.11, onde o `Worker` existe. As ACs do plano foram editadas nos dois SIs.
+  - **Tropeço meu:** a edição que adiciona a tag de imagem compartilhada ao `nestjs-api` falhou em silêncio (script sem assert), e o Compose teria buildado o mesmo Dockerfile duas vezes sob tags diferentes — o oposto de "uma imagem, dois serviços" da TD-04. Peguei inspecionando o `docker compose config` renderizado em vez de confiar na saída do build.
 
 ### SI-03.11 — Implementar o processor: metadados e thumbnail
 - **Status:** pending

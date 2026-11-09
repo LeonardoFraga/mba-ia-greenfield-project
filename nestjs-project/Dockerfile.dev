@@ -1,9 +1,22 @@
 FROM node:25.6.0-slim
 
-RUN apt update && apt install -y procps curl
+# FFmpeg is pinned explicitly rather than floating with the base image, per
+# phase-03-videos/TD-05 — the worker's output depends on it, so the Dockerfile
+# is the version-pinning surface.
+#
+# Trade-off worth knowing: an exact apt pin fails the build once Debian rolls a
+# security update and drops the old version from the repo. Bump this ARG when
+# that happens; `apt-cache policy ffmpeg` inside the image prints the candidate.
+ARG FFMPEG_VERSION=7:5.1.9-0+deb12u1
+
+RUN apt update && apt install -y --no-install-recommends \
+      procps \
+      curl \
+      "ffmpeg=${FFMPEG_VERSION}" \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /home/node/app
 
 USER node
 
-CMD [ "tail", "-f", "/dev/null" ] 
+CMD [ "tail", "-f", "/dev/null" ]
