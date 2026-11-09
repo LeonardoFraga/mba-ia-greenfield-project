@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 11/12 completed
+**SIs:** 12/12 completed
 
 ### SI-03.1 — Provisionar object storage e broker no Compose
 - **Status:** completed
@@ -128,6 +128,22 @@
   - **Tarefa separada anotada:** o `generateVideoFixture` ganhou os parâmetros `pattern` e `crf` para este spec. Se mais specs precisarem de fixtures grandes, vale extrair um cache de fixture por processo em vez de regerar por suíte.
 
 ### SI-03.12 — Implementar o reaper de uploads abandonados
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 12 passing (5 unit na seleção por status e corte, 7 integration contra o MinIO real); suíte completa 293 passing / 40 suites, e2e 82 passing / 5 suites, `tsc --noEmit` exit 0, lint exit 0
+- **Observations:**
+  - **O corte é lido contra `updated_at`, não `created_at`** — é o último toque na linha, e o `complete` o reescreve. Com uma ressalva real que ficou documentada no serviço: assinar partes **não** toca a linha, então um upload genuíno de várias horas parece ocioso para essa query durante toda a sua duração. É o que obriga a janela a ser confortavelmente maior que um upload legítimo (o default é 24h).
+  - **`updated_at` é forçado por SQL cru no teste de integração.** Sendo um `@UpdateDateColumn`, qualquer escrita por repositório o estampa de volta para agora e a linha nunca pareceria abandonada. O `UPDATE ... now() - interval` é o que torna o cenário testável.
+  - **A evidência de que os bytes sumiram é o `ListParts` falhar.** Depois do abort o upload deixa de existir, então listar suas partes é erro, não lista vazia — mais forte do que conferir só a ausência da linha, que nada diz sobre o bucket.
+  - **Um abort que falha não estranha a varredura nem a linha.** As partes ficam inalcançáveis sem o `upload_id` da linha de qualquer forma, e no S3 real a `AbortIncompleteMultipartUpload` do bucket as coleta — regra que este build do MinIO não implementa, conforme a revisão da TD-03. O resultado da varredura reporta `abortFailures` separadamente em vez de engolir a falha.
+  - **Não há scheduler, e isso é deliberado.** Nenhuma decisão desta fase cobre agendamento e o plano não pede um, então a varredura é um método público sem cron e sem endpoint administrativo — inventar qualquer um dos dois seria inventar requisito. Fica como tarefa separada.
+  - **Duplicação consciente de 4 linhas** com o `VideosService.abortUpload`: aquele caminho é escopado por autorização (`findOwnedVideo(userId, ...)`) e o reaper age sem usuário. Contorcer o caminho autorizado para servir aos dois seria pior que repetir o abort e o delete.
+
+## Tarefas separadas anotadas
+
+Itens fora do escopo desta fase, registrados em vez de implementados:
+
+- **Agendar o reaper.** `UploadReaperService.reapAbandonedUploads()` existe e é testado, mas nada o chama. Exige uma decisão sobre scheduler (`@nestjs/schedule` no processo da API, um job repetível do BullMQ no worker, ou cron externo) que nenhuma TD desta fase cobre.
+- **Convergir `ALL_ENTITIES`** num export compartilhado em `src/test/create-test-data-source.ts` — hoje duplicado em 10 specs.
+- **Convergir `auth.e2e-spec.ts`** sobre o `src/test/auth-e2e.helper.ts`.
+- **Corrigir `.claude/skills/testing-guide-nestjs-project/references/external-systems.md`** — a TD-14 tornou correta a premissa de Redis do placeholder, mas as menções a `BullModule` e `getQueueToken` seguem erradas (este projeto não usa `@nestjs/bullmq`).
+- **Cache de fixture de vídeo por processo**, se mais specs passarem a precisar de fixtures grandes, em vez de regerar por suíte.
