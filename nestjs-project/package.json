@@ -94,7 +94,8 @@
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
     "setupFiles": [
-      "dotenv/config"
+      "dotenv/config",
+      "<rootDir>/test/jest-queue-namespace.ts"
     ]
   }
 }

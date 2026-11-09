@@ -11,6 +11,8 @@ import { DatabaseModule } from '../../database/database.module';
 import { StorageModule } from '../../storage/storage.module';
 import { User } from '../../users/entities/user.entity';
 import { Video } from '../entities/video.entity';
+import { VideoProcessingProcessor } from './video-processing.processor';
+import { VideoProcessingWorker } from './video-processing.worker';
 
 /**
  * Root module of the video worker — a separate process from the same codebase,
@@ -20,7 +22,8 @@ import { Video } from '../entities/video.entity';
  * surface, so it loads only config, the database connection, the storage
  * adapter and its own entity. No controllers, no guards, no Swagger.
  *
- * SI-03.11 adds the processor provider and the real BullMQ `Worker` here.
+ * The processor and the real BullMQ `Worker` are its only providers: this
+ * module IS the consumer side of the queue (TD-14).
  */
 @Module({
   imports: [
@@ -38,5 +41,6 @@ import { Video } from '../entities/video.entity';
     TypeOrmModule.forFeature([Video, Channel, User]),
     StorageModule,
   ],
+  providers: [VideoProcessingProcessor, VideoProcessingWorker],
 })
 export class WorkerModule {}

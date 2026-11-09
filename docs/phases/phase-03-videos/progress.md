@@ -1,7 +1,7 @@
 # phase-03-videos — Progress
 
 **Status:** in_progress
-**SIs:** 10/12 completed
+**SIs:** 11/12 completed
 
 ### SI-03.1 — Provisionar object storage e broker no Compose
 - **Status:** completed
@@ -112,9 +112,20 @@
   - **Tropeço meu:** a edição que adiciona a tag de imagem compartilhada ao `nestjs-api` falhou em silêncio (script sem assert), e o Compose teria buildado o mesmo Dockerfile duas vezes sob tags diferentes — o oposto de "uma imagem, dois serviços" da TD-04. Peguei inspecionando o `docker compose config` renderizado em vez de confiar na saída do build.
 
 ### SI-03.11 — Implementar o processor: metadados e thumbnail
-- **Status:** pending
-- **Tests:** —
-- **Observations:** none
+- **Status:** completed
+- **Tests:** 19 passing em `src/videos/worker/` (9 unit no processor, 4 integration do job completo com `Worker` real + `QueueEvents`, 6 integration dos wrappers de FFmpeg sobre HTTP real); suíte completa 281 passing / 38 suites, e2e 82 passing / 5 suites, `tsc --noEmit` exit 0, lint exit 0 — com o container do worker rodando em paralelo
+- **Observations:**
+  - **Mecanismo de-riscado empiricamente antes de escrever o processor.** O `ffprobe` e o `ffmpeg` foram medidos contra o MinIO real, com os bytes de rede lidos em `/sys/class/net/eth0/statistics/rx_bytes` — não estimados: objeto de 2,0MB h264 → probe 136KB (6,5%), thumbnail 264KB (12,6%); 7,9MB mpeg4 → 198KB (2,5%) e 1,45MB (18,3%); 12,8MB h264 com GOP de 2s → 126KB (1,0%) e 271KB (2,1%). O volume é limitado pelo GOP, não pelo tamanho do arquivo, e é isso que sustenta a TD-06 para um upload de 10GB. Os 18,3% do mpeg4 vêm dos keyframes esparsos que o `testsrc` gera nesse codec — propriedade do arquivo, não do desenho.
+  - **Um falso alarme que vale registrar:** a primeira medição, com um servidor HTTP instrumentado, acusou 88,6% de download no thumbnail e quase me levou a reabrir a TD-06. Era artefato do buffer de socket do próprio servidor de teste, que empurrava o arquivo adiante do que o `ffmpeg` consumia; o contador de rede desmentiu. Num teste de volume sobre loopback, o que se mede é o que o servidor escreveu, não o que o cliente leu.
+  - **`attemptsMade` medido, não presumido.** Dentro do processor ele conta as falhas já ocorridas: lê 0, 1, 2 nas três execuções de um job com `attempts: 3`. No evento `failed` lê 1, 2, 3, com `getState()` em `delayed`, `delayed`, `failed`. A tentativa final é portanto `attemptsMade + 1 >= attempts`, e essa aritmética mora num único lugar comentado em `video-processing.worker.ts`.
+  - **Decidir que a falha é terminal não é papel do processor.** A fila é dona da política de retry, e o `finalAttempt` chega como booleano explícito calculado pelo wiring do `Worker`. Isso mantém a política num lugar só e deixa o processor testável em unidade sem fabricar um `Job` do BullMQ.
+  - **Idempotência por construção, não por guarda de status.** A chave do thumbnail é determinística (`{videoId}/thumbnail.jpg`), então rodar o mesmo job duas vezes converge para a mesma linha e para o mesmo objeto único. Não há guarda `if (status === READY) return`, o que preserva a possibilidade de reprocessar.
+  - **`size_bytes` tem um único escritor.** Fica como o complete o gravou a partir do `HeadObject.ContentLength`, que é autoritativo; o `format.size` do `ffprobe` é apenas o Content-Length que lhe serviram. Um teste de unidade guarda que o processor não escreve essa coluna.
+  - **Erro de tipo que o ts-jest não pegou e o ts-node pegou.** A suíte passava inteira enquanto o container do worker não compilava: o `QueryDeepPartialEntity` do TypeORM recursa no valor do `jsonb` e colapsa suas folhas para `{}`, que exclui `null` — um `jsonb` com membros nulos (sem stream de áudio, sem bitrate reportado) é inexpressível nesse tipo. Resolvido com cast no valor, não no patch, para as outras colunas seguirem checadas. Reforça por que o `npx tsc --noEmit` da Definition of Done não é redundante com os testes.
+  - **O worker vivo quebrou quatro testes que passavam — e estava certo em quebrar.** Com o container `video-worker` finalmente de pé, ele passou a drenar a fila de verdade, e os specs do produtor que afirmavam `getJobs(['waiting'])` com um job dentro passaram a correr contra um consumidor real. Correção: `src/test/jest-queue-namespace.ts` move a suíte para o namespace `video-processing-test`, carregado depois do `dotenv/config` nos dois configs do Jest. Um spec de produtor não deve dividir namespace de broker com um consumidor vivo. Atenção ao `rootDir` do `test/jest-e2e.json`: resolve para o diretório do próprio arquivo de config, não para a raiz do projeto, logo o caminho é `<rootDir>/../src/...`.
+  - **A AC do volume baixado, assertada de forma honesta.** O `ffmpeg.util.integration-spec.ts` sobe um servidor HTTP instrumentado e assere o que é mensurável e independente de buffer: nenhum corpo de resposta chegou ao fim (`completedBodies === 0`), o cliente desligou antes (`abortedEarly`), o probe recebeu menos da metade do objeto, e o thumbnail emite um segundo request com offset não-zero — seek de input, não releitura do byte zero. Não se assere fração de bytes no thumbnail, porque sobre loopback esse número é dominado por buffering; a fração real (2,1%) está nas medições acima. O fixture desse spec precisa de ~20MB (`testsrc2` com `crf 16`, gerado em 390ms) justamente para que "não leu o arquivo inteiro" seja mensurável: um arquivo pequeno cabe inteiro no buffer antes do FFmpeg desligar, e a medição não diz nada.
+  - **AC herdada do SI-03.10 cumprida.** `docker compose ps` mostra `video-worker` em `running` com 0 restarts, e os logs mostram `worker listening on "video-processing" via redis redis:6379`. Verificado ponta a ponta na topologia implantada: job enfileirado do container da API, consumido pelo container do worker, objeto de 20MB processado em menos de um segundo, linha em `ready` com 8.000s / 1920x1080 e thumbnail de 53560 bytes no MinIO.
+  - **Tarefa separada anotada:** o `generateVideoFixture` ganhou os parâmetros `pattern` e `crf` para este spec. Se mais specs precisarem de fixtures grandes, vale extrair um cache de fixture por processo em vez de regerar por suíte.
 
 ### SI-03.12 — Implementar o reaper de uploads abandonados
 - **Status:** pending
