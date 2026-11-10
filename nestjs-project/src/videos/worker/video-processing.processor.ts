@@ -62,7 +62,9 @@ export class VideoProcessingProcessor {
     }
 
     try {
-      const { url } = await this.storage.signGetObject(data.storageKey);
+      // Internal endpoint on purpose: this URL is consumed by FFmpeg inside
+      // this container, not by a browser.
+      const { url } = await this.storage.signInternalGetObject(data.storageKey);
 
       const probe = await probeVideo(url);
 

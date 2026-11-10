@@ -23,6 +23,7 @@ const mockedExtractThumbnail = extractThumbnail as jest.MockedFunction<
 
 const VIDEO_ID = '11111111-1111-4111-8111-111111111111';
 const STORAGE_KEY = `${VIDEO_ID}/source`;
+/** Internal endpoint: this URL is consumed by FFmpeg inside the container. */
 const SIGNED_URL = 'http://minio:9000/videos/signed?X-Amz-Signature=abc';
 
 const probeResult = {
@@ -43,7 +44,9 @@ describe('VideoProcessingProcessor', () => {
   let module: TestingModule;
   let processor: VideoProcessingProcessor;
   let videos: jest.Mocked<Pick<Repository<Video>, 'findOne' | 'update'>>;
-  let storage: jest.Mocked<Pick<StorageService, 'signGetObject' | 'putObject'>>;
+  let storage: jest.Mocked<
+    Pick<StorageService, 'signInternalGetObject' | 'putObject'>
+  >;
 
   beforeEach(async () => {
     videos = {
@@ -54,7 +57,7 @@ describe('VideoProcessingProcessor', () => {
       update: jest.fn().mockResolvedValue({ affected: 1 }),
     };
     storage = {
-      signGetObject: jest
+      signInternalGetObject: jest
         .fn()
         .mockResolvedValue({ url: SIGNED_URL, expiresIn: 900 }),
       putObject: jest.fn().mockResolvedValue(undefined),
@@ -86,7 +89,7 @@ describe('VideoProcessingProcessor', () => {
         false,
       );
 
-      expect(storage.signGetObject).toHaveBeenCalledWith(STORAGE_KEY);
+      expect(storage.signInternalGetObject).toHaveBeenCalledWith(STORAGE_KEY);
       // The URL goes to FFmpeg as an HTTP input — nothing is downloaded first.
       expect(mockedProbeVideo).toHaveBeenCalledWith(SIGNED_URL);
       expect(storage.putObject).toHaveBeenCalledWith(
@@ -242,7 +245,7 @@ describe('VideoProcessingProcessor', () => {
       ).resolves.toBeUndefined();
 
       // Retrying cannot make a deleted row exist, so this must not throw.
-      expect(storage.signGetObject).not.toHaveBeenCalled();
+      expect(storage.signInternalGetObject).not.toHaveBeenCalled();
       expect(videos.update).not.toHaveBeenCalled();
     });
   });

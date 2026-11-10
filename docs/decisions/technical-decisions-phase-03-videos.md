@@ -361,6 +361,7 @@ _Subprojects in scope:_
 
 **Revisions:**
 - 2026-11-08 — Testing-guide override recorded: `references/external-systems.md` § "Object Storage" and the guide's artifact row for "Service with side-effect dep (email, storage)" still prescribe a local filesystem adapter; the phase artifacts are authoritative and the storage specs run against the real MinIO container. Rationale: path moved to follow ownership convention — `.claude/skills/` is provided foundation outside this phase's deliverable, so correcting the guide is tracked as a separate task per `CLAUDE.md` § Scope Limits.
+- 2026-11-09 — Signing endpoint split from the server-side endpoint: the adapter now holds two S3 clients — server-side calls use `STORAGE_ENDPOINT` (the Compose service name) while URLs that leave the network are presigned against `STORAGE_PUBLIC_URL`, and a dedicated `signInternalGetObject` keeps the worker's FFmpeg input on the internal endpoint. Rationale: param tightened by new policy — `TD-02` and `TD-07` both record that the browser `PUT`s parts and consumes the presigned GET as the player's `src`, which a URL signed against `minio:9000` cannot satisfy: it does not resolve outside Docker, and SigV4 covers the `Host` header, so rewriting it yields `SignatureDoesNotMatch`. The single-adapter decision is unchanged — in production both variables name the same public S3 endpoint and the two clients coincide.
 
 ---
 

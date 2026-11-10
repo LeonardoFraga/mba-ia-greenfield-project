@@ -118,6 +118,27 @@ services:
         # bucket provisioning. Locally, abandoned uploads are reclaimed by the
         # application-side reaper (SI-03.12), which aborts the multipart through
         # the SDK for every row stuck in `uploading` past the cutoff.
+        # CORS is NOT configured here, and does not need to be. `TD-02` and
+        # `TD-07` both list bucket CORS as a consequence of the chosen option,
+        # since the browser PUTs parts straight to storage and the player reads
+        # the object by presigned URL — neither same-origin with the app.
+        #
+        # Two things were verified rather than assumed. First, this MinIO build
+        # does not implement the API: `put-bucket-cors` fails with
+        # `NotImplemented` (the same class of gap as the lifecycle rule above).
+        # Second, it does not need it — MinIO answers CORS at the server level
+        # with a permissive default: a preflight returns 204 echoing the
+        # request origin, and `Access-Control-Expose-Headers` already includes
+        # `Etag`, `Accept-Ranges` and `Content-Range`. Exposing the ETag is the
+        # part that matters: the client reads it off each part's PUT response
+        # to send back at complete, and a cross-origin response hides headers
+        # that are not exposed.
+        #
+        # So the obligation the decisions recorded is met. On real S3 it is met
+        # by a bucket CORS rule instead, which belongs in production bucket
+        # provisioning alongside the lifecycle rule. To narrow the origins on
+        # MinIO, set `MINIO_API_CORS_ALLOW_ORIGIN` on the server rather than a
+        # per-bucket rule.
         echo "minio-init: buckets and public thumbnail policy ready"
 
   # Queue broker. BullMQ 6 runs against Redis with hand-written Queue/Worker

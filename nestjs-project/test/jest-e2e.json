@@ -12,7 +12,8 @@
   },
   "setupFiles": [
     "dotenv/config",
-    "<rootDir>/../src/test/jest-queue-namespace.ts"
+    "<rootDir>/../src/test/jest-queue-namespace.ts",
+    "<rootDir>/../src/test/jest-storage-public-url.ts"
   ],
   "maxWorkers": 1
 }

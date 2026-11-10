@@ -95,7 +95,8 @@
     "testEnvironment": "node",
     "setupFiles": [
       "dotenv/config",
-      "<rootDir>/test/jest-queue-namespace.ts"
+      "<rootDir>/test/jest-queue-namespace.ts",
+      "<rootDir>/test/jest-storage-public-url.ts"
     ]
   }
 }
